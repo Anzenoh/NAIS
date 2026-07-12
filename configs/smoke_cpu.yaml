@@ -1,0 +1,50 @@
+schema_version: 1
+experiment_id: vea_p0_three_encoder_smoke_cpu_v0
+phase: P0
+
+models:
+  - clip_vit_b16
+  - siglip2_base_p16_224
+  - dinov3_vit_b16
+
+dataset:
+  manifest: data/manifests/smoke_10.jsonl
+  root_env: VEA_DATASET_ROOT
+  expected_image_count: 10
+  on_missing_or_corrupt: error
+
+preprocessing:
+  protocol: canonical_224_center_crop_v0
+  color_mode: RGB
+  resize_shorter_side: 224
+  crop_height: 224
+  crop_width: 224
+  interpolation: bicubic
+  antialias: true
+  random_augmentation: false
+  numeric_normalization: model_specific
+
+extraction:
+  device: cpu
+  batch_size: 1
+  parameter_dtype: float32
+  compute_dtype: float32
+  storage_dtype: float32
+  gradients: disabled
+  model_mode: eval
+  global_taps: all_comparable_blocks
+  patch_taps_normalized_depth:
+    - 0.25
+    - 0.50
+    - 0.75
+    - 1.00
+
+artifacts:
+  schema_id: vea.feature_artifact.v0
+  root: artifacts/runs
+  format: safetensors_shards
+  shard_size: 10
+  checksum: sha256
+
+randomness:
+  seed: 20260712

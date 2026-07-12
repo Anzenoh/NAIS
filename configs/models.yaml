@@ -1,0 +1,70 @@
+schema_version: 1
+revision_policy: "pin_exact_revision_before_phase1"
+trust_remote_code_default: false
+
+models:
+  clip_vit_b16:
+    provider: huggingface
+    model_id: openai/clip-vit-base-patch16
+    revision: null
+    revision_status: unresolved
+    access: public
+    component: vision_backbone_only
+    family: clip
+    architecture_hint: vit_base_patch16
+    canonical_input:
+      height: 224
+      width: 224
+      patch_size_hint: 16
+      grid_hint: [14, 14]
+      patch_count_hint: 196
+    hidden_size_hint: 768
+    layer_count_hint: 12
+    special_token_policy: derive_from_model_config_and_validate
+    loader_policy:
+      trust_remote_code: false
+      no_import_time_download: true
+
+  siglip2_base_p16_224:
+    provider: huggingface
+    model_id: google/siglip2-base-patch16-224
+    revision: null
+    revision_status: unresolved
+    access: public
+    component: vision_backbone_only
+    family: siglip2
+    architecture_hint: vit_base_patch16
+    canonical_input:
+      height: 224
+      width: 224
+      patch_size_hint: 16
+      grid_hint: [14, 14]
+      patch_count_hint: 196
+    hidden_size_hint: 768
+    layer_count_hint: 12
+    special_token_policy: derive_from_model_config_and_validate
+    loader_policy:
+      trust_remote_code: false
+      no_import_time_download: true
+
+  dinov3_vit_b16:
+    provider: huggingface
+    model_id: facebook/dinov3-vitb16-pretrain-lvd1689m
+    revision: null
+    revision_status: unresolved
+    access: user_must_confirm_license_and_auth
+    component: vision_backbone_only
+    family: dinov3
+    architecture_hint: vit_base_patch16
+    canonical_input:
+      height: 224
+      width: 224
+      patch_size_hint: 16
+      grid_hint: [14, 14]
+      patch_count_hint: 196
+    hidden_size_hint: 768
+    layer_count_hint: 12
+    special_token_policy: derive_from_model_config_and_validate
+    loader_policy:
+      trust_remote_code: false
+      no_import_time_download: true

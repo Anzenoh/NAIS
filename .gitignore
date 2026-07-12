@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.token
+*.key
+
+# Model and dataset caches
+.cache/
+huggingface/
+models/
+data/raw/
+data/cache/
+
+# Generated artifacts
+artifacts/
+*.safetensors
+*.npy
+*.npz
+*.pt
+*.pth
+*.ckpt
+*.zarr/
+
+# Logs
+*.log
+.codex-log/

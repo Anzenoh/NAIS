@@ -1,0 +1,21 @@
+﻿experiment:
+  name: canonical_224_encoder_alignment
+  stage: smoke
+  seed: 42
+
+input:
+  image_size: [224, 224]
+  geometry_policy: shared_resize_and_center_crop
+  model_native_normalization: true
+
+features:
+  include_special_tokens: false
+  global_pool: patch_mean
+  selected_depth_fractions: [0.25, 0.5, 0.75, 1.0]
+  storage_dtype: float16
+
+runtime:
+  device: cpu
+  batch_size: 1
+  num_workers: 0
+  network_access: false
