@@ -160,6 +160,57 @@ def test_preflight_failure_is_fail_closed(tmp_path: Path, monkeypatch: pytest.Mo
     assert rc == 3
 
 
+def test_preflight_resource_error_publishes_matching_output_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes],
+) -> None:
+    cli = _load_cli()
+    monkeypatch.setattr(
+        cli, "_preflight",
+        lambda *args: (_ for _ in ()).throw(
+            cli.FeatureExtractionError("checkpoint snapshot unavailable: clip_vit_b16", 4),
+        ),
+    )
+    dataset = tmp_path / "dataset"; dataset.mkdir()
+    cache = tmp_path / "cache"; cache.mkdir()
+    output = tmp_path / "preflight-error.json"
+    rc = cli.main([
+        "preflight", "--profile", str(PROFILE), "--repository-root", str(ROOT),
+        "--dataset-root", str(dataset), "--cache-root", str(cache),
+        "--output-json", str(output),
+    ])
+    stdout = capsysbinary.readouterr().out
+    assert rc == 4
+    assert output.read_bytes() == stdout
+    assert len(stdout) == 153
+    assert json.loads(stdout) == {
+        "error": "checkpoint snapshot unavailable: clip_vit_b16",
+        "exit_code": 4,
+        "ready_for_p1_extraction": False,
+        "schema_id": "vea.p1.feature_extraction_error.v0",
+    }
+
+
+def test_preflight_error_output_collision_preserves_existing_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes],
+) -> None:
+    cli = _load_cli()
+    monkeypatch.setattr(
+        cli, "_preflight",
+        lambda *args: (_ for _ in ()).throw(cli.FeatureExtractionError("not ready", 4)),
+    )
+    dataset = tmp_path / "dataset"; dataset.mkdir()
+    cache = tmp_path / "cache"; cache.mkdir()
+    output = tmp_path / "competing.json"; output.write_bytes(b"existing-bytes")
+    rc = cli.main([
+        "preflight", "--profile", str(PROFILE), "--repository-root", str(ROOT),
+        "--dataset-root", str(dataset), "--cache-root", str(cache),
+        "--output-json", str(output),
+    ])
+    assert rc == 4
+    assert output.read_bytes() == b"existing-bytes"
+    assert json.loads(capsysbinary.readouterr().out)["error"] == "not ready"
+
+
 def test_repository_input_identity_mismatch_is_rejected(tmp_path: Path) -> None:
     profile = load_extraction_profile(PROFILE)
     repository = tmp_path / "repository"; repository.mkdir()
@@ -212,6 +263,20 @@ def test_preflight_success_with_synthetic_local_resources(tmp_path: Path) -> Non
     )
     assert result["classification"] == "P1_FEATURE_EXTRACTION_PREFLIGHT_VALID"
     assert calls == [(('nvidia-smi', '--query-gpu=index,name', '--format=csv,noheader,nounits'), False)]
+
+
+def test_preflight_empty_snapshot_is_resource_failure(tmp_path: Path) -> None:
+    cli = _load_cli(); profile = load_extraction_profile(PROFILE)
+    dataset = tmp_path / "dataset"; dataset.mkdir()
+    cache = tmp_path / "cache"; cache.mkdir()
+    with pytest.raises(cli.FeatureExtractionError, match="checkpoint snapshot unavailable") as error:
+        cli._preflight(
+            profile, ROOT, dataset, cache,
+            dataset_validator=lambda rows, root: None,
+            interpreter_is_file=lambda path: True,
+            host_name=lambda: "apple",
+        )
+    assert error.value.exit_code == 4
 
 
 def test_fake_three_encoder_smoke_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -414,6 +479,11 @@ def test_runbook_has_approval_and_stop_boundaries() -> None:
         'assert_nonlink_existing "$R1R3_TASK"',
         'assert_nonlink_existing "$R1R3_REPORT"',
         'assert_nonlink_existing "$PROFILE"',
+        'scripts/extract_features.py',
+        'src/vision_encoder_alignment/p1_feature_extraction.py',
+        'src/vision_encoder_alignment/p1_runtime_preflight.py',
+        'scripts/inventory_p1_checkpoint_cache.py',
+        'scripts/validate_p1_feature_extraction.py',
         'assert_nonlink_existing "$DATASET_ROOT"',
         'assert_nonlink_existing "$CACHE_ROOT"',
         'assert_nonlink_existing "$OUTPUT_PARENT"',

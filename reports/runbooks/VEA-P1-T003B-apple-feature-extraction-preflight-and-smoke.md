@@ -113,6 +113,18 @@ fe2ba7035c8852bdd3ed44f75b01926c1987aca1f71bae94accbb6578eaec54d src/vision_enco
 3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063 src/vision_encoder_alignment/runtime_boundary.py
 SOURCE_BINDINGS
 
+# Verify the exact Stage A implementation before creating any evidence root.
+while read -r expected relative; do
+  assert_nonlink_existing "$REPO_ROOT/$relative" file
+  printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
+done <<'STAGE_A_IMPLEMENTATION'
+ce709105c14595acbc585692185d624d8101b57f14f520ba527263de33ba2607 scripts/extract_features.py
+2c754057f59ccdd4cfc07794816184c2392af583fe26e155183581e2f66f4ab8 src/vision_encoder_alignment/p1_feature_extraction.py
+dcd5dce50b9e5e2e4ac7c505efac751e9f621fd1a780495484fb02758873a13e src/vision_encoder_alignment/p1_runtime_preflight.py
+1e3d5b9b95315a61af436f61f32b1fb184fb2c9d3e0b53118437d3c8b3ecabd5 scripts/inventory_p1_checkpoint_cache.py
+7a0e8cfb54798d857ddccdf6d8288d13f8587d3ff257be56c1ef49c8db1ba4f0 scripts/validate_p1_feature_extraction.py
+STAGE_A_IMPLEMENTATION
+
 assert_nonlink_existing "$DATASET_ROOT" directory
 assert_nonlink_existing "$CACHE_ROOT" directory
 assert_nonlink_existing "$OUTPUT_PARENT" directory
