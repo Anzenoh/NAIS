@@ -1,0 +1,377 @@
+{
+  "device": {
+    "cuda_required": true,
+    "device": "cuda:0",
+    "dtype": "float32",
+    "gpu_name": "NVIDIA GeForce RTX 5090",
+    "visible_gpu_count": 1
+  },
+  "lane": {
+    "interpreter_layout": "linux_bin",
+    "lane_id": "p1_apple_dinov3_isolated",
+    "runtime_root": "/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated",
+    "selector": "dinov3_apple_cuda_fp32_v1",
+    "system_site_packages": false
+  },
+  "packages": {
+    "artifact_count": 40,
+    "artifacts": [
+      {
+        "bytes": 136983,
+        "distribution": "certifi",
+        "filename": "certifi-2026.7.22-py3-none-any.whl",
+        "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+        "version": "2026.7.22"
+      },
+      {
+        "bytes": 224256,
+        "distribution": "charset-normalizer",
+        "filename": "charset_normalizer-3.4.9-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "5e226f6218febc71f6c1fc2fafb91c226f75bdc1d8fb12d66823716e891608fd",
+        "version": "3.4.9"
+      },
+      {
+        "bytes": 97732,
+        "distribution": "filelock",
+        "filename": "filelock-3.32.0-py3-none-any.whl",
+        "sha256": "d396bea984af47333ef05e50eae7eff88c84256de6112aea0ec48a233c064fe3",
+        "version": "3.32.0"
+      },
+      {
+        "bytes": 206583,
+        "distribution": "fsspec",
+        "filename": "fsspec-2026.7.0-py3-none-any.whl",
+        "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279",
+        "version": "2026.7.0"
+      },
+      {
+        "bytes": 4428006,
+        "distribution": "hf-xet",
+        "filename": "hf_xet-1.5.2-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "db78c39c83d6279daddc98e2238f373ab8980685556d42472b4ec51abcf03e8c",
+        "version": "1.5.2"
+      },
+      {
+        "bytes": 566395,
+        "distribution": "huggingface-hub",
+        "filename": "huggingface_hub-0.36.2-py3-none-any.whl",
+        "sha256": "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270",
+        "version": "0.36.2"
+      },
+      {
+        "bytes": 65455,
+        "distribution": "idna",
+        "filename": "idna-3.18-py3-none-any.whl",
+        "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2",
+        "version": "3.18"
+      },
+      {
+        "bytes": 134899,
+        "distribution": "jinja2",
+        "filename": "jinja2-3.1.6-py3-none-any.whl",
+        "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+        "version": "3.1.6"
+      },
+      {
+        "bytes": 22947,
+        "distribution": "markupsafe",
+        "filename": "markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "d6dd0be5b5b189d31db7cda48b91d7e0a9795f31430b7f271219ab30f1d3ac9d",
+        "version": "3.0.3"
+      },
+      {
+        "bytes": 536198,
+        "distribution": "mpmath",
+        "filename": "mpmath-1.3.0-py3-none-any.whl",
+        "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c",
+        "version": "1.3.0"
+      },
+      {
+        "bytes": 2068504,
+        "distribution": "networkx",
+        "filename": "networkx-3.6.1-py3-none-any.whl",
+        "sha256": "d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762",
+        "version": "3.6.1"
+      },
+      {
+        "bytes": 17950613,
+        "distribution": "numpy",
+        "filename": "numpy-1.26.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "sha256": "675d61ffbfa78604709862923189bad94014bef562cc35cf61d3a07bba02a7ed",
+        "version": "1.26.4"
+      },
+      {
+        "bytes": 594346921,
+        "distribution": "nvidia-cublas-cu12",
+        "filename": "nvidia_cublas_cu12-12.8.4.1-py3-none-manylinux_2_27_x86_64.whl",
+        "sha256": "8ac4e771d5a348c551b2a426eda6193c19aa630236b418086020df5ba9667142",
+        "version": "12.8.4.1"
+      },
+      {
+        "bytes": 10248621,
+        "distribution": "nvidia-cuda-cupti-cu12",
+        "filename": "nvidia_cuda_cupti_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "ea0cb07ebda26bb9b29ba82cda34849e73c166c18162d3913575b0c9db9a6182",
+        "version": "12.8.90"
+      },
+      {
+        "bytes": 88040029,
+        "distribution": "nvidia-cuda-nvrtc-cu12",
+        "filename": "nvidia_cuda_nvrtc_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+        "sha256": "a7756528852ef889772a84c6cd89d41dfa74667e24cca16bb31f8f061e3e9994",
+        "version": "12.8.93"
+      },
+      {
+        "bytes": 954765,
+        "distribution": "nvidia-cuda-runtime-cu12",
+        "filename": "nvidia_cuda_runtime_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "adade8dcbd0edf427b7204d480d6066d33902cab2a4707dcfc48a2d0fd44ab90",
+        "version": "12.8.90"
+      },
+      {
+        "bytes": 706758467,
+        "distribution": "nvidia-cudnn-cu12",
+        "filename": "nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_x86_64.whl",
+        "sha256": "949452be657fa16687d0930933f032835951ef0892b37d2d53824d1a84dc97a8",
+        "version": "9.10.2.21"
+      },
+      {
+        "bytes": 193118695,
+        "distribution": "nvidia-cufft-cu12",
+        "filename": "nvidia_cufft_cu12-11.3.3.83-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "4d2dd21ec0b88cf61b62e6b43564355e5222e4a3fb394cac0db101f2dd0d4f74",
+        "version": "11.3.3.83"
+      },
+      {
+        "bytes": 1197834,
+        "distribution": "nvidia-cufile-cu12",
+        "filename": "nvidia_cufile_cu12-1.13.1.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "1d069003be650e131b21c932ec3d8969c1715379251f8d23a1860554b1cb24fc",
+        "version": "1.13.1.3"
+      },
+      {
+        "bytes": 63619976,
+        "distribution": "nvidia-curand-cu12",
+        "filename": "nvidia_curand_cu12-10.3.9.90-py3-none-manylinux_2_27_x86_64.whl",
+        "sha256": "b32331d4f4df5d6eefa0554c565b626c7216f87a06a4f56fab27c3b68a830ec9",
+        "version": "10.3.9.90"
+      },
+      {
+        "bytes": 267506905,
+        "distribution": "nvidia-cusolver-cu12",
+        "filename": "nvidia_cusolver_cu12-11.7.3.90-py3-none-manylinux_2_27_x86_64.whl",
+        "sha256": "4376c11ad263152bd50ea295c05370360776f8c3427b30991df774f9fb26c450",
+        "version": "11.7.3.90"
+      },
+      {
+        "bytes": 288216466,
+        "distribution": "nvidia-cusparse-cu12",
+        "filename": "nvidia_cusparse_cu12-12.5.8.93-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "1ec05d76bbbd8b61b06a80e1eaf8cf4959c3d4ce8e711b65ebd0443bb0ebb13b",
+        "version": "12.5.8.93"
+      },
+      {
+        "bytes": 287193691,
+        "distribution": "nvidia-cusparselt-cu12",
+        "filename": "nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_x86_64.whl",
+        "sha256": "f1bb701d6b930d5a7cea44c19ceb973311500847f81b634d802b7b539dc55623",
+        "version": "0.7.1"
+      },
+      {
+        "bytes": 322364134,
+        "distribution": "nvidia-nccl-cu12",
+        "filename": "nvidia_nccl_cu12-2.27.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "adf27ccf4238253e0b826bce3ff5fa532d65fc42322c8bfdfaf28024c0fbe039",
+        "version": "2.27.3"
+      },
+      {
+        "bytes": 39254836,
+        "distribution": "nvidia-nvjitlink-cu12",
+        "filename": "nvidia_nvjitlink_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+        "sha256": "81ff63371a7ebd6e6451970684f916be2eab07321b73c9d244dc2b4da7f73b88",
+        "version": "12.8.93"
+      },
+      {
+        "bytes": 89954,
+        "distribution": "nvidia-nvtx-cu12",
+        "filename": "nvidia_nvtx_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "5b17e2001cc0d751a5bc2c6ec6d26ad95913324a4adb86788c944f8ce9ba441f",
+        "version": "12.8.90"
+      },
+      {
+        "bytes": 100195,
+        "distribution": "packaging",
+        "filename": "packaging-26.2-py3-none-any.whl",
+        "sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+        "version": "26.2"
+      },
+      {
+        "bytes": 807870,
+        "distribution": "pyyaml",
+        "filename": "pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc",
+        "version": "6.0.3"
+      },
+      {
+        "bytes": 801798,
+        "distribution": "regex",
+        "filename": "regex-2026.7.19-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "9dce8ec9695f531a1b8a6f314fd4b393adcccf2ea861db480cdf97a301d01a68",
+        "version": "2026.7.19"
+      },
+      {
+        "bytes": 73075,
+        "distribution": "requests",
+        "filename": "requests-2.34.2-py3-none-any.whl",
+        "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
+        "version": "2.34.2"
+      },
+      {
+        "bytes": 1203987,
+        "distribution": "safetensors",
+        "filename": "safetensors-0.4.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "sha256": "2d603846a8585b9432a0fd415db1d4c57c0f860eb4aea21f92559ff9902bae4d",
+        "version": "0.4.3"
+      },
+      {
+        "bytes": 1008090,
+        "distribution": "setuptools",
+        "filename": "setuptools-83.0.0-py3-none-any.whl",
+        "sha256": "29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3",
+        "version": "83.0.0"
+      },
+      {
+        "bytes": 6299353,
+        "distribution": "sympy",
+        "filename": "sympy-1.14.0-py3-none-any.whl",
+        "sha256": "e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5",
+        "version": "1.14.0"
+      },
+      {
+        "bytes": 3274982,
+        "distribution": "tokenizers",
+        "filename": "tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "sha256": "369cc9fc8cc10cb24143873a0d95438bb8ee257bb80c71989e3ee290e8d72c67",
+        "version": "0.22.2"
+      },
+      {
+        "bytes": 889046175,
+        "distribution": "torch",
+        "filename": "torch-2.8.0+cu128-cp312-cp312-manylinux_2_28_x86_64.whl",
+        "sha256": "4354fc05bb79b208d6995a04ca1ceef6a9547b1c4334435574353d381c55087c",
+        "version": "2.8.0+cu128"
+      },
+      {
+        "bytes": 80184,
+        "distribution": "tqdm",
+        "filename": "tqdm-4.70.0-py3-none-any.whl",
+        "sha256": "7f585706bfddbdebf89daac705b2dfcc16890130727d3197ca62c732b4310953",
+        "version": "4.70.0"
+      },
+      {
+        "bytes": 11607938,
+        "distribution": "transformers",
+        "filename": "transformers-4.56.0-py3-none-any.whl",
+        "sha256": "bacf539c38dd850690856881c4974321af93a22f2ee96bcc994741a2121d8e71",
+        "version": "4.56.0"
+      },
+      {
+        "bytes": 155560068,
+        "distribution": "triton",
+        "filename": "triton-3.4.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        "sha256": "31c1d84a5c0ec2c0f8e8a072d7fd150cab84a9c239eaddc6706c081bfae4eb04",
+        "version": "3.4.0"
+      },
+      {
+        "bytes": 45571,
+        "distribution": "typing-extensions",
+        "filename": "typing_extensions-4.16.0-py3-none-any.whl",
+        "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+        "version": "4.16.0"
+      },
+      {
+        "bytes": 131087,
+        "distribution": "urllib3",
+        "filename": "urllib3-2.7.0-py3-none-any.whl",
+        "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
+        "version": "2.7.0"
+      }
+    ],
+    "authoritative_inventory_sha256": "90014a47572699627ed339c1cc0bcd92f08785d19db0b0d24169ef94af547952",
+    "direct_requirements": [
+      "huggingface-hub==0.36.2",
+      "numpy==1.26.4",
+      "safetensors==0.4.3",
+      "tokenizers==0.22.2",
+      "torch==2.8.0+cu128",
+      "transformers==4.56.0"
+    ],
+    "forbidden_distributions": [
+      "colorama",
+      "torchvision"
+    ],
+    "requirements": {
+      "entry_count": 40,
+      "path": "configs/runtime_profiles/p1_apple_dinov3_isolated.requirements.txt",
+      "sha256": "e15c93609143a56bbb6afa9506cb87c40cf67a865f399ee0e09271b5e1cf7c64"
+    },
+    "setup_plan": {
+      "path": "configs/runtime_profiles/p1_apple_rtx5090_runtime_setup.json",
+      "sha256": "f3436ef720e1191f3e997f6717a65c038f4dc054ab2e2649084dfa7d8b120bef"
+    },
+    "state": "resolved"
+  },
+  "policies": {
+    "cpu_fallback": false,
+    "mixed_precision": false,
+    "network_allowed": false,
+    "ready_for_p1_extraction": false
+  },
+  "profile_id": "dinov3-apple-cuda-fp32-v1",
+  "provenance": {
+    "decision": "READY_TO_AUTHOR_APPLE_RUNTIME_SETUP",
+    "driver_version": "580.173.02",
+    "evidence_run_tag": "apple_20260728T094536Z",
+    "package_resolution_task": "VEA-P1-T002C-3R2",
+    "reported_cuda_compatibility": "13.0"
+  },
+  "python": {
+    "version": "3.12.0"
+  },
+  "schema_id": "vea.p1.production_runtime_profile.v1",
+  "source_bindings": [
+    {
+      "path": "scripts/dinov3_extraction_worker.py",
+      "role": "isolated_worker",
+      "sha256": "d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f"
+    },
+    {
+      "path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py",
+      "role": "extraction_boundary",
+      "sha256": "95fd65746e3c15373cf7a035ccb121307881b72db82622c870f396c7df7e15fe"
+    },
+    {
+      "path": "src/vision_encoder_alignment/extractors/dinov3.py",
+      "role": "dinov3_extractor",
+      "sha256": "dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82"
+    },
+    {
+      "path": "src/vision_encoder_alignment/production_runtime_contract.py",
+      "role": "production_runtime_contract",
+      "sha256": "bfd41c817a98768ef6d9e6f5db996420ff4017583165c6afb2f8bc587c3b6010"
+    },
+    {
+      "path": "src/vision_encoder_alignment/runtime_boundary.py",
+      "role": "runtime_boundary",
+      "sha256": "3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063"
+    }
+  ],
+  "target": {
+    "architecture": "x86_64",
+    "glibc": "2.35",
+    "gpu_name": "NVIDIA GeForce RTX 5090",
+    "hostname": "apple",
+    "operating_system": "Linux",
+    "target_id": "lab_apple_rtx5090"
+  }
+}

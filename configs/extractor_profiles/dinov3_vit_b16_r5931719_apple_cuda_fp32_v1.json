@@ -1,0 +1,550 @@
+{
+  "checkpoint_files": [
+    {
+      "bytes": 744,
+      "filename": "config.json",
+      "sha256": "3c9cc418f4622fd6d5587fd142b6f3cba0ba6a69f67ced907d8b7f26118451ec"
+    },
+    {
+      "bytes": 585,
+      "filename": "preprocessor_config.json",
+      "sha256": "960c41d1f3a7778b936365769a2d90550b318a6c0a53a0296957adacfe5e0dd7"
+    },
+    {
+      "bytes": 342662192,
+      "filename": "model.safetensors",
+      "sha256": "9a21ac3df0c63839d62612dda6f454d816c25611cc7a52966ed5a5a94921dc8b"
+    }
+  ],
+  "descriptor": {
+    "compute_dtype": "float32",
+    "evaluation_mode": true,
+    "family": "dinov3",
+    "gradients_enabled": false,
+    "grid_height": 14,
+    "grid_width": 14,
+    "hidden_dimension": 768,
+    "implementation_class": "DINOv3VisionEncoderExtractor",
+    "input_height": 224,
+    "input_width": 224,
+    "layer_count": 12,
+    "output_dtype": "float32",
+    "parameter_dtype": "float32",
+    "vision_component_path": "self"
+  },
+  "forbidden_operations": [
+    "autocast",
+    "checkpoint_rewrite",
+    "crop",
+    "gradient",
+    "image_processor",
+    "model_id_load",
+    "network",
+    "pil_conversion",
+    "resize",
+    "training"
+  ],
+  "forbidden_packages": [
+    "torchvision"
+  ],
+  "identities": {
+    "current_freeze_sha256": "42ded209c200cf18b422e0626083776bf1567c5151eacf0d5f895a7bcc17e109",
+    "external_snapshot_manifest_sha256": "ca8d17a601d520532319230379200c4727c9d62046e21ecb0407498019cf798a",
+    "persistent_freeze_sha256": "995687ed934c0a94b52a040af048f87bc8de4e5089475f70565ad37f1f33ecd9",
+    "persistent_runtime_manifest_sha256": "5276f28e4f9a7416a6a10be5a029a793052bbc06f5c71e2360b6b983ffa60de4",
+    "registry_sha256": "2c75cc26a27febc633b2bad479779327f35abbf36160df2805f43a4e33f48244",
+    "runtime_profile_sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223",
+    "semantic_evidence_sha256": "8308c0ca73a3cb31fcfcc1333abe4ad904ea3e96bb45e83662281630b53e0311",
+    "semantic_profile_sha256": "3824963e6d3c7d6ecb8a83c971533cdbec853d4a3b653f151c98959049411df8",
+    "snapshot_profile_sha256": "df90c58f2fd603b1e7979576270e67924bd84594eb08ad337edc3fdcdd2b80ac"
+  },
+  "input_transport": {
+    "allow_pickle": false,
+    "dtype": "uint8",
+    "format": "npy",
+    "layout": "NHWC",
+    "shape_suffix": [
+      224,
+      224,
+      3
+    ]
+  },
+  "manual_preprocessing": {
+    "channel_order": "RGB",
+    "formula_steps": [
+      "astype(float32, copy=True)",
+      "multiply np.float32(1.0 / 255.0)",
+      "subtract float32 ImageNet mean",
+      "divide by float32 ImageNet standard deviation",
+      "transpose NHWC to NCHW",
+      "ascontiguousarray float32",
+      "finite assertion"
+    ],
+    "image_mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "image_standard_deviation": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "profile_id": "dinov3-manual-fp32-imagenet-v1",
+    "rescale_factor": 0.003921568859368563,
+    "rescale_factor_dtype": "float32"
+  },
+  "model": {
+    "config_class": "DINOv3ViTConfig",
+    "expected_parameter_count": 85660416,
+    "expected_parameter_tensor_count": 211,
+    "key": "dinov3_vit_b16",
+    "model_class": "DINOv3ViTModel",
+    "model_id": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+    "revision": "5931719e67bbdb9737e363e781fb0c67687896bc",
+    "state_sha256": "c382afd66ac658255f9f1406bad1e5e5fcf410af40cbc5c306b770792a4f30fd"
+  },
+  "output_artifact_policy": {
+    "canonical_namespace": "backbone",
+    "global_source": "patch_axis_mean",
+    "requested_taps_only": true,
+    "retain_full_sequence": false,
+    "retain_native_pooler": false,
+    "retain_special_tokens": false,
+    "schema_id": "vea.feature_artifact.v0",
+    "storage_dtype": "float32"
+  },
+  "policies": {
+    "cpu_only": false,
+    "cuda_required": true,
+    "device": "cuda:0",
+    "dtype": "float32",
+    "evaluation_mode": true,
+    "fp32_only": true,
+    "frozen_parameters": true,
+    "inference_mode": true,
+    "local_files_only": true,
+    "network_allowed": false,
+    "processor_allowed": false,
+    "ready_for_p1_extraction": false,
+    "token_allowed": false,
+    "torchvision_allowed": false,
+    "trust_remote_code": false,
+    "use_safetensors": true
+  },
+  "production_sources": [
+    {
+      "path": "configs/models.yaml",
+      "role": "model_registry",
+      "sha256": "2c75cc26a27febc633b2bad479779327f35abbf36160df2805f43a4e33f48244"
+    },
+    {
+      "path": "pyproject.toml",
+      "role": "package_manifest",
+      "sha256": "45f3ab3f1d3267c51f82babf47fe2f53011192ccf317494931aba70478ba9c7e"
+    },
+    {
+      "path": "scripts/dinov3_extraction_worker.py",
+      "role": "isolated_worker",
+      "sha256": "d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f"
+    },
+    {
+      "path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py",
+      "role": "extraction_boundary",
+      "sha256": "95fd65746e3c15373cf7a035ccb121307881b72db82622c870f396c7df7e15fe"
+    },
+    {
+      "path": "src/vision_encoder_alignment/dinov3_production_identity.py",
+      "role": "production_identity",
+      "sha256": "01e60a8e8434695c845467c361e3b129ba54a1231287e8fa4f59f983fc91d5c4"
+    },
+    {
+      "path": "src/vision_encoder_alignment/extractors/__init__.py",
+      "role": "extractor_exports",
+      "sha256": "f7ccf421524355c7ea11bb9ed3e7b6d83fa25e953d7266f3a36a4e7bcb95fc49"
+    },
+    {
+      "path": "src/vision_encoder_alignment/extractors/base.py",
+      "role": "extractor_contract",
+      "sha256": "ecf512c1830fc1735392b010a69312bc62914e44c4b5c125a55d2b89889eae82"
+    },
+    {
+      "path": "src/vision_encoder_alignment/extractors/clip.py",
+      "role": "peer_extractor",
+      "sha256": "0ec0980c9761a73597244b03116de093c71b568cc0d8755951821b4f448eb82d"
+    },
+    {
+      "path": "src/vision_encoder_alignment/extractors/dinov3.py",
+      "role": "public_extractor",
+      "sha256": "dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82"
+    },
+    {
+      "path": "src/vision_encoder_alignment/extractors/siglip2.py",
+      "role": "peer_extractor",
+      "sha256": "0267d9eaa51d6c6b686339d9d9e700f782d2ec3b5c16c20d3df16e8fa17cfd5e"
+    },
+    {
+      "path": "src/vision_encoder_alignment/feature_artifacts/__init__.py",
+      "role": "feature_artifact_boundary",
+      "sha256": "5615ef70615d23cfd3af945f8803f3a3bb7883329a7460ccee8f9888a7ee965d"
+    },
+    {
+      "path": "src/vision_encoder_alignment/feature_artifacts/checksum.py",
+      "role": "feature_artifact_boundary",
+      "sha256": "306077306a4fe8fe7f5084fcdda5d1999869f73038db2389a34ac5281803a81a"
+    },
+    {
+      "path": "src/vision_encoder_alignment/feature_artifacts/io.py",
+      "role": "feature_artifact_boundary",
+      "sha256": "c86e2c2566c98d112e05e12b0f3704f21794f3fc69542e19972d788df4536b2d"
+    },
+    {
+      "path": "src/vision_encoder_alignment/feature_artifacts/schema.py",
+      "role": "feature_artifact_boundary",
+      "sha256": "f35059e0c0baf61929b00c92993c849cb7d601b3d0a61c037fb686cdc3fc3aa2"
+    },
+    {
+      "path": "src/vision_encoder_alignment/feature_artifacts/validation.py",
+      "role": "feature_artifact_boundary",
+      "sha256": "2f52f7aaf73287a0fd061666c1412d6cf2e1546209cf715ac96a1cc776235b36"
+    },
+    {
+      "path": "src/vision_encoder_alignment/production_runtime_contract.py",
+      "role": "production_runtime_contract",
+      "sha256": "bfd41c817a98768ef6d9e6f5db996420ff4017583165c6afb2f8bc587c3b6010"
+    },
+    {
+      "path": "src/vision_encoder_alignment/runtime_boundary.py",
+      "role": "runtime_boundary",
+      "sha256": "3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063"
+    },
+    {
+      "path": "src/vision_encoder_alignment/snapshot_boundary.py",
+      "role": "snapshot_boundary",
+      "sha256": "fa365b893016ab7188fe73cd3c365f7695f242356ced05f00da386180a21bd54"
+    }
+  ],
+  "profile_id": "dinov3-vitb16-r5931719-apple-cuda-fp32-v1",
+  "protocol": {
+    "allowed_operation": "extract_canonical_features",
+    "request_schema_id": "vea.dinov3_extraction_request.v0",
+    "response_schema_id": "vea.dinov3_extraction_response.v0"
+  },
+  "reference_feature_hash_count": 28,
+  "runtime_profile": {
+    "path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json",
+    "profile_id": "dinov3-apple-cuda-fp32-v1",
+    "selector": "dinov3_apple_cuda_fp32_v1",
+    "sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223"
+  },
+  "schema_id": "vea.dinov3_apple_extractor_profile.v1",
+  "sources": {
+    "runtime_profile_path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json",
+    "semantic_evidence_path": "reports/runs/VEA-P0-T007A-4-dinov3-pretrained-runtime-semantic-probe.json",
+    "semantic_profile_path": "configs/semantic_probes/dinov3_vit_b16_r5931719_semantics_v0.json",
+    "snapshot_profile_path": "configs/model_snapshots/dinov3_vit_b16_r5931719_v0.json"
+  },
+  "tap_catalog": [
+    "embedding_output",
+    "block_01",
+    "block_02",
+    "block_03",
+    "block_04",
+    "block_05",
+    "block_06",
+    "block_07",
+    "block_08",
+    "block_09",
+    "block_10",
+    "block_11",
+    "block_12",
+    "final_norm"
+  ],
+  "tap_mapping": [
+    {
+      "name": "embedding_output",
+      "source": "hidden_states[0]"
+    },
+    {
+      "name": "block_01",
+      "source": "hidden_states[1]"
+    },
+    {
+      "name": "block_02",
+      "source": "hidden_states[2]"
+    },
+    {
+      "name": "block_03",
+      "source": "hidden_states[3]"
+    },
+    {
+      "name": "block_04",
+      "source": "hidden_states[4]"
+    },
+    {
+      "name": "block_05",
+      "source": "hidden_states[5]"
+    },
+    {
+      "name": "block_06",
+      "source": "hidden_states[6]"
+    },
+    {
+      "name": "block_07",
+      "source": "hidden_states[7]"
+    },
+    {
+      "name": "block_08",
+      "source": "hidden_states[8]"
+    },
+    {
+      "name": "block_09",
+      "source": "hidden_states[9]"
+    },
+    {
+      "name": "block_10",
+      "source": "hidden_states[10]"
+    },
+    {
+      "name": "block_11",
+      "source": "hidden_states[11]"
+    },
+    {
+      "name": "block_12",
+      "source": "raw_final_block_hook"
+    },
+    {
+      "name": "final_norm",
+      "source": "last_hidden_state"
+    }
+  ],
+  "temporary_output_policy": {
+    "external_workspace_only": true,
+    "input_retained": false,
+    "output_retained": false,
+    "response_retained": false,
+    "workspace_retained": false
+  },
+  "token_layout": {
+    "cls_token_indices": [
+      0
+    ],
+    "grid_height": 14,
+    "grid_width": 14,
+    "patch_token_end_index": 200,
+    "patch_token_indices": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126,
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191,
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199,
+      200
+    ],
+    "patch_token_start_index": 5,
+    "register_token_indices": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "special_token_indices": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "special_token_policy": "dinov3_cls1_register4_prefix_verified_runtime_v1",
+    "total_token_count": 201
+  }
+}
