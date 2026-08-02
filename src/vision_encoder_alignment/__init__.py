@@ -1,1 +1,1 @@
-﻿"""Vision encoder alignment research package."""
+"""Vision encoder alignment research package."""

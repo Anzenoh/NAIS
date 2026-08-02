@@ -28,6 +28,7 @@ umask 077
 : "${VEA_T003B_EVIDENCE_ROOT:?set VEA_T003B_EVIDENCE_ROOT to a fresh evidence root}"
 : "${VEA_R1R3_TASK_SHA256:?set from the independently accepted R1R3 package identity}"
 : "${VEA_R1R3_REPORT_SHA256:?set from the independently accepted R1R3 package identity}"
+: "${VEA_APPROVED_REPO_COMMIT:?set to the independently approved exact repository commit}"
 
 REPO_ROOT=/home/chltjsdh/vea/repo
 DATASET_ROOT="$VEA_DATASET_ROOT"
@@ -88,9 +89,12 @@ test "$(hostname)" = apple
 assert_nonlink_existing "$REPO_ROOT" directory
 assert_nonlink_existing "$REPO_ROOT/.git" directory
 cd "$REPO_ROOT"
-test "$(git branch --show-current)" = main
-test "$(git rev-parse HEAD)" = e518a51ba83f70b42611cc4386a9f55dc9e97de3
+test "${#VEA_APPROVED_REPO_COMMIT}" -eq 40
+case "$VEA_APPROVED_REPO_COMMIT" in *[!0-9a-f]*) exit 2;; esac
+test "$(git rev-parse HEAD)" = "$VEA_APPROVED_REPO_COMMIT"
 test -z "$(git diff --cached --name-only)"
+test -z "$(git diff --name-only)"
+test -z "$(git ls-files --others --exclude-standard)"
 git -c core.whitespace=cr-at-eol diff --check
 
 assert_nonlink_existing "$R1R3_TASK" file
@@ -100,15 +104,15 @@ printf '%s  %s\n' "$VEA_R1R3_REPORT_SHA256" "$R1R3_REPORT" | sha256sum --check -
 grep -F 'VEA-P1-T002D-SBR1 = ACCEPTED_PASS' "$R1R3_TASK" >/dev/null
 
 assert_nonlink_existing "$PROFILE" file
-printf '%s  %s\n' 98d2dfe8e711efdb6f33ac45e87e21318ec53db8b1cc8f6a0aed789babc58cf5 "$PROFILE" | sha256sum --check --strict
+printf '%s  %s\n' a0ef8cfe3bf8e6aed95c2ce2fcc32c6d90cfb169e8593ecc1954862afe96563f "$PROFILE" | sha256sum --check --strict
 while read -r expected relative; do
   assert_nonlink_existing "$REPO_ROOT/$relative" file
   printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
 done <<'SOURCE_BINDINGS'
-08cfdbbbd9e99120adb7c660e4c25f162f766b7516451c6a4a410f316a11defd scripts/dinov3_extraction_worker.py
-fe2ba7035c8852bdd3ed44f75b01926c1987aca1f71bae94accbb6578eaec54d src/vision_encoder_alignment/dinov3_extraction_boundary.py
+d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f scripts/dinov3_extraction_worker.py
+95fd65746e3c15373cf7a035ccb121307881b72db82622c870f396c7df7e15fe src/vision_encoder_alignment/dinov3_extraction_boundary.py
 0ec0980c9761a73597244b03116de093c71b568cc0d8755951821b4f448eb82d src/vision_encoder_alignment/extractors/clip.py
-97c781592265c9e600ba0ad257528c313c471e23c2d22f27905d2e42a872f0d1 src/vision_encoder_alignment/extractors/dinov3.py
+dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82 src/vision_encoder_alignment/extractors/dinov3.py
 0267d9eaa51d6c6b686339d9d9e700f782d2ec3b5c16c20d3df16e8fa17cfd5e src/vision_encoder_alignment/extractors/siglip2.py
 3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063 src/vision_encoder_alignment/runtime_boundary.py
 SOURCE_BINDINGS
@@ -119,10 +123,11 @@ while read -r expected relative; do
   printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
 done <<'STAGE_A_IMPLEMENTATION'
 95a5f9de7d9d1cd964417d478b3047ec1ff62f578e5c18fbab2176f954ee01d2 scripts/extract_features.py
-2c754057f59ccdd4cfc07794816184c2392af583fe26e155183581e2f66f4ab8 src/vision_encoder_alignment/p1_feature_extraction.py
+2a031c401289e408f18c31d58c3d2da473801bb871b286cf911f8f347cb6a3d4 src/vision_encoder_alignment/p1_feature_extraction.py
 dcd5dce50b9e5e2e4ac7c505efac751e9f621fd1a780495484fb02758873a13e src/vision_encoder_alignment/p1_runtime_preflight.py
 1e3d5b9b95315a61af436f61f32b1fb184fb2c9d3e0b53118437d3c8b3ecabd5 scripts/inventory_p1_checkpoint_cache.py
 7a0e8cfb54798d857ddccdf6d8288d13f8587d3ff257be56c1ef49c8db1ba4f0 scripts/validate_p1_feature_extraction.py
+478ae09932379618893a34ddaaea7fa5a5ece2477d61360ebb2692b5ad9ba26f scripts/validate_p1_apple_runtime.py
 STAGE_A_IMPLEMENTATION
 
 assert_nonlink_existing "$DATASET_ROOT" directory
@@ -192,7 +197,8 @@ canonical ID. The smoke is the first 10 ordered images, batch size 1, sequential
 CLIP/SigLIP2/DINOv3 lanes, and FP32 only.
 
 ```bash
-RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)_p1_1000_three_encoder_e518a51"
+APPROVED_COMMIT_PREFIX=${VEA_APPROVED_REPO_COMMIT:0:7}
+RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)_p1_1000_three_encoder_${APPROVED_COMMIT_PREFIX}"
 case "$RUN_ID" in ????????T??????Z_p1_1000_three_encoder_[0-9a-f]*) ;; *) exit 2;; esac
 test ! -e "$OUTPUT_PARENT/$RUN_ID"
 test ! -L "$OUTPUT_PARENT/$RUN_ID"

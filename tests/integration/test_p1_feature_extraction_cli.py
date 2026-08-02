@@ -561,8 +561,9 @@ def test_runbook_has_approval_and_stop_boundaries() -> None:
     assert '> "$EVIDENCE_ROOT/03-preflight.stdout.json"' not in text
     mkdir_index = text.index('mkdir -m 700 -- "$EVIDENCE_ROOT"')
     for precheck in (
-        'test "$(hostname)" = apple', 'git branch --show-current',
-        'git rev-parse HEAD', 'git diff --cached --name-only', 'diff --check',
+        'test "$(hostname)" = apple', 'VEA_APPROVED_REPO_COMMIT',
+        'git rev-parse HEAD', 'git diff --cached --name-only',
+        'git diff --name-only', 'git ls-files --others --exclude-standard', 'diff --check',
         'assert_nonlink_existing "$R1R3_TASK"',
         'assert_nonlink_existing "$R1R3_REPORT"',
         'assert_nonlink_existing "$PROFILE"',
@@ -571,6 +572,7 @@ def test_runbook_has_approval_and_stop_boundaries() -> None:
         'src/vision_encoder_alignment/p1_runtime_preflight.py',
         'scripts/inventory_p1_checkpoint_cache.py',
         'scripts/validate_p1_feature_extraction.py',
+        'scripts/validate_p1_apple_runtime.py',
         'assert_nonlink_existing "$DATASET_ROOT"',
         'assert_nonlink_existing "$CACHE_ROOT"',
         'assert_nonlink_existing "$OUTPUT_PARENT"',
@@ -608,9 +610,13 @@ def test_runbook_has_approval_and_stop_boundaries() -> None:
         "03-preflight.json", "04-readiness.txt", "05-preflight-manifest.txt",
     ):
         assert artifact in stage_a
-    run_id_line = next(line for line in text.splitlines() if line.startswith('RUN_ID="$(date'))
-    rendered = re.sub(r'\$\(date -u \+%Y%m%dT%H%M%SZ\)', '20260730T120000Z', run_id_line.split('=', 1)[1].strip('"'))
-    assert rendered == RUN_ID
+    assert 'test "${#VEA_APPROVED_REPO_COMMIT}" -eq 40' in text
+    assert 'case "$VEA_APPROVED_REPO_COMMIT" in *[!0-9a-f]*) exit 2;; esac' in text
+    assert 'test "$(git rev-parse HEAD)" = "$VEA_APPROVED_REPO_COMMIT"' in text
+    assert 'test "$(git branch --show-current)" = main' not in text
+    assert "e518a51ba83f70b42611cc4386a9f55dc9e97de3" not in text
+    assert 'APPROVED_COMMIT_PREFIX=${VEA_APPROVED_REPO_COMMIT:0:7}' in text
+    assert 'three_encoder_${APPROVED_COMMIT_PREFIX}' in text
 
 
 def test_execution_never_claims_extraction_readiness(tmp_path: Path) -> None:

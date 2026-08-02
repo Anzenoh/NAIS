@@ -1,0 +1,29 @@
+{
+  "access_license_confirmed": true,
+  "access_license_evidence": "Official MS COCO 2017 val2017 distribution selected for local research use; original images will not be redistributed.",
+  "allowed_file_extensions": [
+    ".jpg"
+  ],
+  "canonical_geometry_id": "canonical_224_center_crop_v0",
+  "corrupt_image_policy": "fail_closed_v0",
+  "dataset_name": "MS COCO",
+  "dataset_root_classification": "local_read_only_official_distribution",
+  "dataset_version": "2017 val2017",
+  "duplicate_policy": "reject_path_case_and_content_v0",
+  "exclude_patterns": [],
+  "explicit_relative_paths": [],
+  "include_patterns": [
+    "*.jpg"
+  ],
+  "ordering_policy": "selection_order_v0",
+  "required_image_count": 1000,
+  "rgb_decode_policy": "pillow_convert_rgb_strict_v0",
+  "schema_id": "vea.p1_dataset_profile.v0",
+  "selection_policy": "sha256_rank_v0",
+  "selection_seed": 42,
+  "split_seed": 43,
+  "symlink_reparse_policy": "reject_all_v0",
+  "test_count": 100,
+  "train_count": 800,
+  "validation_count": 100
+}
