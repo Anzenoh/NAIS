@@ -19,7 +19,6 @@ from vision_encoder_alignment.feature_artifacts import (
     FeatureArtifactMetadata,
     canonical_tensor_keys,
 )
-from vision_encoder_alignment.config import load_experiment_config, load_model_registry
 
 
 _DINOV3_LIVE_PROFILE_RELATIVE_PATH = (
@@ -412,6 +411,8 @@ def repository_root() -> Path:
 
 @pytest.fixture
 def model_registry(repository_root: Path) -> dict[str, object]:
+    from vision_encoder_alignment.config import load_model_registry
+
     return load_model_registry(repository_root / "configs" / "models.yaml")
 
 
@@ -419,6 +420,8 @@ def model_registry(repository_root: Path) -> dict[str, object]:
 def smoke_config(
     repository_root: Path, model_registry: dict[str, object]
 ) -> dict[str, object]:
+    from vision_encoder_alignment.config import load_experiment_config
+
     return load_experiment_config(
         repository_root / "configs" / "smoke_cpu.yaml",
         model_registry,

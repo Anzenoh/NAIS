@@ -1,0 +1,199 @@
+{
+  "authorization": {
+    "forward_allowed": true,
+    "max_forward_count_per_process": 2,
+    "max_independent_processes": 2,
+    "purpose": "pretrained_runtime_semantic_validation_only",
+    "raw_tensor_retention_allowed": false,
+    "synthetic_input_only": true,
+    "training_allowed": false
+  },
+  "canonical_input": {
+    "construction": [
+      "y, x = np.indices((224, 224), dtype=np.uint16)",
+      "gradient = np.stack((x % 256, y % 256, (x + y) % 256), axis=-1).astype(np.uint8)",
+      "checker_base = (((x // 8 + y // 8) % 2) * 255).astype(np.uint8); checker = np.stack((checker_base, (3 * x + 5 * y) % 256, np.where(checker_base == 0, (7 * x) % 256, (11 * y) % 256)), axis=-1).astype(np.uint8)"
+    ],
+    "dtype": "uint8",
+    "image_ids": [
+      "image-b",
+      "image-a"
+    ],
+    "normalized": {
+      "c_contiguous": true,
+      "dtype": "float32",
+      "finite": true,
+      "sha256": "c0ebe2af6db2e61d052dc58272379beef749a4c5392d4e2204a11862cf172526",
+      "shape": [
+        2,
+        3,
+        224,
+        224
+      ]
+    },
+    "sha256": "b0fa2f6e3b2fbca50cde7e4a2dc3a65a0f788a184aec382365e520d54b468411",
+    "shape": [
+      2,
+      224,
+      224,
+      3
+    ]
+  },
+  "checkpoint_files": [
+    {
+      "bytes": 744,
+      "filename": "config.json",
+      "sha256": "3c9cc418f4622fd6d5587fd142b6f3cba0ba6a69f67ced907d8b7f26118451ec"
+    },
+    {
+      "bytes": 585,
+      "filename": "preprocessor_config.json",
+      "sha256": "960c41d1f3a7778b936365769a2d90550b318a6c0a53a0296957adacfe5e0dd7"
+    },
+    {
+      "bytes": 342662192,
+      "filename": "model.safetensors",
+      "sha256": "9a21ac3df0c63839d62612dda6f454d816c25611cc7a52966ed5a5a94921dc8b"
+    }
+  ],
+  "geometry": {
+    "candidate_cls_indices": [
+      0
+    ],
+    "candidate_patch_end_index": 200,
+    "candidate_patch_start_index": 5,
+    "candidate_register_indices": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "grid_height": 14,
+    "grid_width": 14,
+    "hidden_size": 768,
+    "input_height": 224,
+    "input_width": 224,
+    "layer_count": 12,
+    "patch_count": 196,
+    "patch_size": 16,
+    "special_token_policy": "dinov3_cls1_register4_prefix_verified_runtime_v1",
+    "total_token_count": 201
+  },
+  "identities": {
+    "external_snapshot_manifest_sha256": "d5de6075023ca0b7a5d2f4fb1fa04add8f489f9d9613671c9cb475b3045caa25",
+    "persistent_freeze_sha256": "995687ed934c0a94b52a040af048f87bc8de4e5089475f70565ad37f1f33ecd9",
+    "persistent_runtime_manifest_sha256": "3b17f1158a9d9db4b6213904825528b0a593839be44fe05cc6336514a154d80a",
+    "registry_sha256": "2c75cc26a27febc633b2bad479779327f35abbf36160df2805f43a4e33f48244",
+    "runtime_profile_sha256": "1fe6ba3ef691e97cfb1cb8f3ffc7af7a4590f0bf75de0686c3536df4828900c4",
+    "snapshot_profile_sha256": "e7181b80924f3a95d64a83a3ec2fee88a872de70330656ea6c88a0fe2ad11308"
+  },
+  "installed_sources": [
+    {
+      "path": "transformers/models/dinov3_vit/configuration_dinov3_vit.py",
+      "sha256": "1ac7cb889e2314e8cadf9b0bed43d42cfb05dce6d730f719be4380c8a10a8a46"
+    },
+    {
+      "path": "transformers/models/dinov3_vit/modeling_dinov3_vit.py",
+      "sha256": "00652d90ff8c7ae32b047ebe2acd2271f97e03f768cf570ac051045a4e0d5cf5"
+    },
+    {
+      "path": "transformers/models/dinov3_vit/image_processing_dinov3_vit_fast.py",
+      "sha256": "5a84a6a7283b77e0a0b000851150dd9d04dc54a11baa3d2cd3e2603d4669ec80"
+    },
+    {
+      "path": "transformers/image_transforms.py",
+      "sha256": "163556a472733191afe8cd86e08348d599bd88eb2370a3747ca687b1c14a6691"
+    }
+  ],
+  "manual_preprocessing": {
+    "channel_order": "RGB",
+    "formula_steps": [
+      "copy uint8 NHWC input to float32",
+      "multiply by np.float32(1.0 / 255.0)",
+      "subtract ImageNet mean as float32",
+      "divide by ImageNet standard deviation as float32",
+      "transpose NHWC to NCHW",
+      "materialize C-contiguous float32 output"
+    ],
+    "image_mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "image_standard_deviation": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "profile_id": "dinov3-manual-fp32-imagenet-v1",
+    "prohibited_operations": [
+      "crop",
+      "image_processor",
+      "pil_conversion",
+      "resize",
+      "torchvision"
+    ],
+    "rescale_factor": 0.003921568859368563,
+    "rescale_factor_dtype": "float32"
+  },
+  "model": {
+    "config_class": "DINOv3ViTConfig",
+    "expected_parameter_count": 85660416,
+    "expected_parameter_tensor_count": 211,
+    "key": "dinov3_vit_b16",
+    "model_class": "DINOv3ViTModel",
+    "model_id": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+    "revision": "5931719e67bbdb9737e363e781fb0c67687896bc",
+    "state_sha256": "c382afd66ac658255f9f1406bad1e5e5fcf410af40cbc5c306b770792a4f30fd"
+  },
+  "policies": {
+    "cpu_only": true,
+    "evaluation_mode": true,
+    "fp32_only": true,
+    "frozen_parameters": true,
+    "image_processor_allowed": false,
+    "inference_mode": true,
+    "local_files_only": true,
+    "model_cache_creation_allowed": false,
+    "model_id_load_allowed": false,
+    "network_allowed": false,
+    "raw_tensor_retention_allowed": false,
+    "token_allowed": false,
+    "torchvision_allowed": false,
+    "trust_remote_code": false,
+    "use_safetensors": true
+  },
+  "profile_id": "dinov3-vitb16-r5931719-pretrained-semantics-v0",
+  "protocol": {
+    "request_schema_id": "vea.dinov3_pretrained_semantic_probe_request.v0",
+    "response_schema_id": "vea.dinov3_pretrained_semantic_probe_response.v0"
+  },
+  "schema_id": "vea.dinov3_semantic_probe_profile.v0",
+  "taps": {
+    "artifact_selected": [
+      "embedding_output",
+      "block_06",
+      "final_norm"
+    ],
+    "catalog": [
+      "embedding_output",
+      "block_01",
+      "block_02",
+      "block_03",
+      "block_04",
+      "block_05",
+      "block_06",
+      "block_07",
+      "block_08",
+      "block_09",
+      "block_10",
+      "block_11",
+      "block_12",
+      "final_norm"
+    ]
+  },
+  "tolerances": {
+    "atol": 1e-06,
+    "rtol": 1e-06
+  }
+}

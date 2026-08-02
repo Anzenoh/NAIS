@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vision-encoder-alignment"
+version = "0.1.0"
+description = "Reproducible contracts for vision encoder representation alignment"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "numpy>=1.26,<2.0",
+    "PyYAML>=6,<7",
+    "safetensors>=0.4,<0.5",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+clip = [
+    "torch>=2.3.0,<2.4",
+    "transformers>=4.40.1,<4.41",
+    "Pillow>=10.3.0,<10.4",
+    "huggingface-hub>=0.22.2,<0.23",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = ["-ra", "--strict-config", "--strict-markers"]
+testpaths = ["tests"]
+pythonpath = ["src"]

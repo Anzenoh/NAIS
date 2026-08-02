@@ -1,0 +1,333 @@
+{
+  "allowed_worker_operations": [
+    "artifact_boundary_self_test",
+    "runtime_self_test"
+  ],
+  "candidate": {
+    "expected_freeze": {
+      "bytes": 5206,
+      "line_count": 275,
+      "sha256": "995687ed934c0a94b52a040af048f87bc8de4e5089475f70565ad37f1f33ecd9"
+    },
+    "local_packages": {
+      "huggingface-hub": "0.36.2",
+      "pip": "23.2.1",
+      "tokenizers": "0.22.2",
+      "transformers": "4.56.0"
+    },
+    "python": {
+      "major": 3,
+      "minor": 12,
+      "version": "3.12.0"
+    },
+    "system_site_packages": true
+  },
+  "canonical_input": {
+    "channel_order": "RGB",
+    "dtype": "uint8",
+    "height": 224,
+    "layout": "NHWC",
+    "random_augmentation": false,
+    "width": 224
+  },
+  "current_base": {
+    "expected_freeze": {
+      "bytes": 5206,
+      "line_count": 275,
+      "sha256": "42ded209c200cf18b422e0626083776bf1567c5151eacf0d5f895a7bcc17e109"
+    },
+    "packages": {
+      "Pillow": "10.3.0",
+      "huggingface-hub": "0.22.2",
+      "numpy": "1.26.4",
+      "pytest": "8.4.2",
+      "safetensors": "0.4.3",
+      "tokenizers": "0.19.1",
+      "torch": "2.3.0",
+      "transformers": "4.40.1"
+    },
+    "python": "3.12.0",
+    "source_files": [
+      {
+        "path": "configs/models.yaml",
+        "sha256": "2c75cc26a27febc633b2bad479779327f35abbf36160df2805f43a4e33f48244"
+      },
+      {
+        "path": "pyproject.toml",
+        "sha256": "45f3ab3f1d3267c51f82babf47fe2f53011192ccf317494931aba70478ba9c7e"
+      },
+      {
+        "path": "scripts/dinov3_extraction_worker.py",
+        "sha256": "08cfdbbbd9e99120adb7c660e4c25f162f766b7516451c6a4a410f316a11defd"
+      },
+      {
+        "path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py",
+        "sha256": "fe2ba7035c8852bdd3ed44f75b01926c1987aca1f71bae94accbb6578eaec54d"
+      },
+      {
+        "path": "src/vision_encoder_alignment/dinov3_production_identity.py",
+        "sha256": "01e60a8e8434695c845467c361e3b129ba54a1231287e8fa4f59f983fc91d5c4"
+      },
+      {
+        "path": "src/vision_encoder_alignment/extractors/__init__.py",
+        "sha256": "f7ccf421524355c7ea11bb9ed3e7b6d83fa25e953d7266f3a36a4e7bcb95fc49"
+      },
+      {
+        "path": "src/vision_encoder_alignment/extractors/base.py",
+        "sha256": "ecf512c1830fc1735392b010a69312bc62914e44c4b5c125a55d2b89889eae82"
+      },
+      {
+        "path": "src/vision_encoder_alignment/extractors/clip.py",
+        "sha256": "0ec0980c9761a73597244b03116de093c71b568cc0d8755951821b4f448eb82d"
+      },
+      {
+        "path": "src/vision_encoder_alignment/extractors/dinov3.py",
+        "sha256": "97c781592265c9e600ba0ad257528c313c471e23c2d22f27905d2e42a872f0d1"
+      },
+      {
+        "path": "src/vision_encoder_alignment/extractors/siglip2.py",
+        "sha256": "0267d9eaa51d6c6b686339d9d9e700f782d2ec3b5c16c20d3df16e8fa17cfd5e"
+      },
+      {
+        "path": "src/vision_encoder_alignment/feature_artifacts/__init__.py",
+        "sha256": "5615ef70615d23cfd3af945f8803f3a3bb7883329a7460ccee8f9888a7ee965d"
+      },
+      {
+        "path": "src/vision_encoder_alignment/feature_artifacts/checksum.py",
+        "sha256": "306077306a4fe8fe7f5084fcdda5d1999869f73038db2389a34ac5281803a81a"
+      },
+      {
+        "path": "src/vision_encoder_alignment/feature_artifacts/io.py",
+        "sha256": "c86e2c2566c98d112e05e12b0f3704f21794f3fc69542e19972d788df4536b2d"
+      },
+      {
+        "path": "src/vision_encoder_alignment/feature_artifacts/schema.py",
+        "sha256": "f35059e0c0baf61929b00c92993c849cb7d601b3d0a61c037fb686cdc3fc3aa2"
+      },
+      {
+        "path": "src/vision_encoder_alignment/feature_artifacts/validation.py",
+        "sha256": "2f52f7aaf73287a0fd061666c1412d6cf2e1546209cf715ac96a1cc776235b36"
+      },
+      {
+        "path": "src/vision_encoder_alignment/production_runtime_contract.py",
+        "sha256": "bfd41c817a98768ef6d9e6f5db996420ff4017583165c6afb2f8bc587c3b6010"
+      },
+      {
+        "path": "src/vision_encoder_alignment/runtime_boundary.py",
+        "sha256": "3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063"
+      }
+    ],
+    "torch": {
+      "candidate_local_distribution": false,
+      "cuda_available": false,
+      "cuda_device_count": 0,
+      "metadata_version": "2.3.0",
+      "runtime_version": "2.3.0+cpu"
+    }
+  },
+  "dependency_validation": {
+    "active_requirement_count": 18,
+    "expected_inherited_conflict_count": 8,
+    "expected_inherited_conflict_sha256": "dd98f3eba507ab782d4550192672d0f9fbd56e85c82478a0cea8611c775798a2",
+    "expected_new_conflict_count": 0,
+    "expected_unsatisfied_active_requirement_count": 0,
+    "inherited_conflict_hash_encoding": "UTF-8",
+    "inherited_conflict_hash_join": "sorted unique lines joined by LF without a trailing LF",
+    "requirement_owners": [
+      "huggingface-hub",
+      "tokenizers",
+      "transformers"
+    ]
+  },
+  "external_layout": {
+    "manifest": "runtime-manifest.json",
+    "metadata_directory": "metadata",
+    "venv_directory": "venv",
+    "venv_python": "venv/Scripts/python.exe",
+    "wheelhouse_directory": "wheelhouse"
+  },
+  "forbidden_packages": [
+    "directml",
+    "nvidia-*",
+    "opencv-python",
+    "torch",
+    "torchaudio",
+    "torchvision",
+    "triton"
+  ],
+  "installed_sources": [
+    {
+      "bytes": 41500,
+      "path": "transformers/image_transforms.py",
+      "sha256": "163556a472733191afe8cd86e08348d599bd88eb2370a3747ca687b1c14a6691"
+    },
+    {
+      "bytes": 27737,
+      "path": "transformers/image_processing_utils_fast.py",
+      "sha256": "bbde838e3f91b9dc579db57b5d7ad68edcffd9df65b51b28a74aa8ffc116f4dd"
+    },
+    {
+      "bytes": 37821,
+      "path": "transformers/image_utils.py",
+      "sha256": "9046fc74a50458ad84d99e2fac279e09bf9987a1c3db9f7242a7beb4634763c6"
+    },
+    {
+      "bytes": 53343,
+      "path": "transformers/models/auto/configuration_auto.py",
+      "sha256": "5ae3551d7ba745e899af5664286e5f3ca2346a415f6390153cc112984f23c6e7"
+    },
+    {
+      "bytes": 38879,
+      "path": "transformers/models/auto/image_processing_auto.py",
+      "sha256": "34a4639959e6513d8471bb62a3d8b51cf0d1e10d95c29f8cbeb2fa027f4b94f2"
+    },
+    {
+      "bytes": 96469,
+      "path": "transformers/models/auto/modeling_auto.py",
+      "sha256": "a25d5b7c28aa8f2b79a4334323f8759416b4afb8ad0271a8c87bf3f2360de8d5"
+    },
+    {
+      "bytes": 7421,
+      "path": "transformers/models/dinov3_vit/configuration_dinov3_vit.py",
+      "sha256": "1ac7cb889e2314e8cadf9b0bed43d42cfb05dce6d730f719be4380c8a10a8a46"
+    },
+    {
+      "bytes": 4167,
+      "path": "transformers/models/dinov3_vit/image_processing_dinov3_vit_fast.py",
+      "sha256": "5a84a6a7283b77e0a0b000851150dd9d04dc54a11baa3d2cd3e2603d4669ec80"
+    },
+    {
+      "bytes": 22688,
+      "path": "transformers/models/dinov3_vit/modeling_dinov3_vit.py",
+      "sha256": "00652d90ff8c7ae32b047ebe2acd2271f97e03f768cf570ac051045a4e0d5cf5"
+    }
+  ],
+  "manual_preprocessing": {
+    "expected_input_sha256": "b0fa2f6e3b2fbca50cde7e4a2dc3a65a0f788a184aec382365e520d54b468411",
+    "expected_output_sha256": "c0ebe2af6db2e61d052dc58272379beef749a4c5392d4e2204a11862cf172526",
+    "formula": [
+      "astype(float32, copy=True)",
+      "multiply np.float32(rescale_factor)",
+      "subtract np.asarray(mean, dtype=float32)",
+      "divide by np.asarray(std, dtype=float32)",
+      "transpose NHWC to NCHW",
+      "ascontiguousarray float32",
+      "finite assertion"
+    ],
+    "image_generation": {
+      "checker_blue": "where(checker_base == 0, (7*x) % 256, (11*y) % 256)",
+      "checker_green": "(3*x + 5*y) % 256",
+      "checker_red": "checker_base",
+      "checker_tile_size": 8,
+      "gradient_blue": "(x + y) % 256",
+      "gradient_green": "y % 256",
+      "gradient_red": "x % 256",
+      "indices_dtype": "uint16",
+      "stack_order": [
+        "gradient",
+        "checker"
+      ]
+    },
+    "image_mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "image_std": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "input_shape": [
+      2,
+      224,
+      224,
+      3
+    ],
+    "output_dtype": "float32",
+    "output_shape": [
+      2,
+      3,
+      224,
+      224
+    ],
+    "profile_id": "dinov3-manual-fp32-imagenet-v1",
+    "rescale_factor_dtype": "float32",
+    "rescale_factor_fp32": 0.003921568859368563,
+    "rescale_factor_json": 0.00392156862745098
+  },
+  "metadata_files": [
+    {
+      "bytes": 744,
+      "filename": "config.json",
+      "sha256": "3c9cc418f4622fd6d5587fd142b6f3cba0ba6a69f67ced907d8b7f26118451ec"
+    },
+    {
+      "bytes": 585,
+      "filename": "preprocessor_config.json",
+      "sha256": "960c41d1f3a7778b936365769a2d90550b318a6c0a53a0296957adacfe5e0dd7"
+    }
+  ],
+  "model_weights": {
+    "expected_present": false,
+    "forbidden_filenames": [
+      "model.safetensors",
+      "pytorch_model.bin"
+    ],
+    "transferred_bytes": 0
+  },
+  "policies": {
+    "cpu_only": true,
+    "image_processor_runtime_object_allowed": false,
+    "local_metadata_only_after_provision": true,
+    "model_checkpoint_allowed": false,
+    "network_allowed_during_verify": false,
+    "system_site_packages": true,
+    "torchvision_allowed": false
+  },
+  "runtime_id": "dinov3-vitb16-r5931719-py312-torch230-tf4560-manual-v1",
+  "runtime_root": {
+    "default_template": "%LOCALAPPDATA%/VEA/runtimes/dinov3-vitb16-r5931719-py312-torch230-tf4560-manual-v1",
+    "environment_variable": "LOCALAPPDATA",
+    "relative_parts": [
+      "VEA",
+      "runtimes",
+      "dinov3-vitb16-r5931719-py312-torch230-tf4560-manual-v1"
+    ],
+    "repository_relation": "outside_repository",
+    "staging_name_prefix": ".dinov3-vitb16-r5931719-py312-torch230-tf4560-manual-v1.staging-"
+  },
+  "schema_id": "vea.dinov3_isolated_runtime_profile.v0",
+  "target": {
+    "evidence_revision": "5931719e67bbdb9737e363e781fb0c67687896bc",
+    "model_id": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+    "registry_key": "dinov3_vit_b16"
+  },
+  "wheel_files": [
+    {
+      "bytes": 566395,
+      "distribution": "huggingface-hub",
+      "filename": "huggingface_hub-0.36.2-py3-none-any.whl",
+      "sha256": "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270",
+      "version": "0.36.2"
+    },
+    {
+      "bytes": 2747786,
+      "distribution": "tokenizers",
+      "filename": "tokenizers-0.22.2-cp39-abi3-win_amd64.whl",
+      "sha256": "c9ea31edff2968b44a88f97d784c2f16dc0729b8b143ed004699ebca91f05c48",
+      "version": "0.22.2"
+    },
+    {
+      "bytes": 11607938,
+      "distribution": "transformers",
+      "filename": "transformers-4.56.0-py3-none-any.whl",
+      "sha256": "bacf539c38dd850690856881c4974321af93a22f2ee96bcc994741a2121d8e71",
+      "version": "4.56.0"
+    }
+  ],
+  "worker_protocol": {
+    "request_schema_id": "vea.dinov3_isolated_worker_request.v0",
+    "response_schema_id": "vea.dinov3_isolated_worker_response.v0"
+  }
+}

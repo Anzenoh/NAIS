@@ -6,8 +6,8 @@ models:
   clip_vit_b16:
     provider: huggingface
     model_id: openai/clip-vit-base-patch16
-    revision: null
-    revision_status: unresolved
+    revision: 57c216476eefef5ab752ec549e440a49ae4ae5f3
+    revision_status: pinned
     access: public
     component: vision_backbone_only
     family: clip
@@ -28,8 +28,8 @@ models:
   siglip2_base_p16_224:
     provider: huggingface
     model_id: google/siglip2-base-patch16-224
-    revision: null
-    revision_status: unresolved
+    revision: 75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2
+    revision_status: pinned
     access: public
     component: vision_backbone_only
     family: siglip2
@@ -50,8 +50,8 @@ models:
   dinov3_vit_b16:
     provider: huggingface
     model_id: facebook/dinov3-vitb16-pretrain-lvd1689m
-    revision: null
-    revision_status: unresolved
+    revision: 5931719e67bbdb9737e363e781fb0c67687896bc
+    revision_status: pinned
     access: user_must_confirm_license_and_auth
     component: vision_backbone_only
     family: dinov3
