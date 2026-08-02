@@ -118,7 +118,7 @@ while read -r expected relative; do
   assert_nonlink_existing "$REPO_ROOT/$relative" file
   printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
 done <<'STAGE_A_IMPLEMENTATION'
-ce709105c14595acbc585692185d624d8101b57f14f520ba527263de33ba2607 scripts/extract_features.py
+95a5f9de7d9d1cd964417d478b3047ec1ff62f578e5c18fbab2176f954ee01d2 scripts/extract_features.py
 2c754057f59ccdd4cfc07794816184c2392af583fe26e155183581e2f66f4ab8 src/vision_encoder_alignment/p1_feature_extraction.py
 dcd5dce50b9e5e2e4ac7c505efac751e9f621fd1a780495484fb02758873a13e src/vision_encoder_alignment/p1_runtime_preflight.py
 1e3d5b9b95315a61af436f61f32b1fb184fb2c9d3e0b53118437d3c8b3ecabd5 scripts/inventory_p1_checkpoint_cache.py

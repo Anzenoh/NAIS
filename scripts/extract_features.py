@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -343,6 +345,78 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+_WORKER_ERROR_SCHEMA_ID = "vea.p1.feature_extraction_error.v0"
+_WORKER_ERROR_FIELDS = frozenset((
+    "error", "exit_code", "ready_for_p1_extraction", "schema_id",
+))
+_WORKER_ERROR_MAX_BYTES = 512
+_WORKER_DIAGNOSTIC_MAX_CHARS = 160
+_WORKER_DIAGNOSTIC_SENSITIVE = re.compile(
+    r"(?:token|secret|password|credential|api[_ -]?key)", re.IGNORECASE,
+)
+
+
+def _worker_error_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    document: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError("duplicate key")
+        document[key] = value
+    return document
+
+
+def _reject_worker_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite constant: {value}")
+
+
+def _bounded_worker_failure_diagnostic(stdout: str, returncode: int) -> str:
+    """Return only a canonical, safe child error classification or the fallback."""
+
+    fallback = "worker_process_failed"
+    if not isinstance(stdout, str):
+        return fallback
+    try:
+        raw = stdout.encode("utf-8", "strict")
+    except UnicodeEncodeError:
+        return fallback
+    if not raw or len(raw) > _WORKER_ERROR_MAX_BYTES:
+        return fallback
+    try:
+        document = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_worker_error_pairs,
+            parse_constant=_reject_worker_json_constant,
+        )
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError, RecursionError):
+        return fallback
+    if not isinstance(document, dict) or set(document) != _WORKER_ERROR_FIELDS:
+        return fallback
+    if (
+        document["schema_id"] != _WORKER_ERROR_SCHEMA_ID
+        or document["ready_for_p1_extraction"] is not False
+        or type(document["exit_code"]) is not int
+        or document["exit_code"] != returncode
+    ):
+        return fallback
+    message = document["error"]
+    if (
+        not isinstance(message, str)
+        or not 0 < len(message) <= _WORKER_DIAGNOSTIC_MAX_CHARS
+        or any(not (" " <= character <= "~") for character in message)
+        or "/" in message
+        or "\\" in message
+        or re.search(r"(?:^[A-Za-z]:|^~)", message) is not None
+        or _WORKER_DIAGNOSTIC_SENSITIVE.search(message) is not None
+    ):
+        return fallback
+    try:
+        if raw != _canonical_output(document):
+            return fallback
+    except FeatureExtractionError:
+        return fallback
+    return message
+
+
 def _record_failure_without_masking(
     run_root: Path, *, state: Mapping[str, Any], stage: str,
     exception_class: str, sanitized_message: str,
@@ -451,7 +525,10 @@ def _run_or_resume(args: argparse.Namespace, *, resume: bool) -> int:
                 run_root, state=state, stage="worker_process",
                 model=by_model[model], shard=plans[min(progress[model], len(plans) - 1)],
                 exception_class="WorkerProcessFailure", raw_return_code=result.returncode,
-                sanitized_message="worker_process_failed", original=failure,
+                sanitized_message=_bounded_worker_failure_diagnostic(
+                    result.stdout, result.returncode,
+                ),
+                original=failure,
             )
             raise failure
         try:

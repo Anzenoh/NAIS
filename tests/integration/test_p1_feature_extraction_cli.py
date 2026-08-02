@@ -319,6 +319,93 @@ def test_worker_failure_leaves_incomplete_run(tmp_path: Path, monkeypatch: pytes
     assert evidence["raw_return_code"] == return_code
 
 
+def _canonical_child_error(error: str, *, exit_code: int = 4) -> str:
+    return json.dumps({
+        "error": error,
+        "exit_code": exit_code,
+        "ready_for_p1_extraction": False,
+        "schema_id": "vea.p1.feature_extraction_error.v0",
+    }, sort_keys=True, separators=(",", ":")) + "\n"
+
+
+def _worker_failure_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, stdout: str, stderr: str = "",
+) -> dict[str, object]:
+    cli = _load_cli()
+    monkeypatch.setattr(
+        cli, "run_command",
+        lambda command, environment: subprocess.CompletedProcess(command, 4, stdout, stderr),
+    )
+    assert cli.main(_arguments(tmp_path)) == EXIT_EXECUTION
+    path = next((tmp_path / "outputs" / RUN_ID / "failures").glob("attempt-*.json"))
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_worker_failure_preserves_safe_canonical_child_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence = _worker_failure_evidence(
+        tmp_path, monkeypatch,
+        stdout=_canonical_child_error("checkpoint snapshot unavailable: clip_vit_b16"),
+        stderr="arbitrary stderr with token=do-not-persist",
+    )
+    assert evidence["sanitized_message"] == "checkpoint snapshot unavailable: clip_vit_b16"
+    assert evidence["stable_exit_code"] == EXIT_EXECUTION
+    assert evidence["raw_return_code"] == 4
+    assert "token=do-not-persist" not in json.dumps(evidence, sort_keys=True)
+    assert set(evidence) == {
+        "attempt_index", "created_at_utc", "end_index_exclusive", "exception_class",
+        "failure_scope", "failure_stage", "image_ids", "lane_id", "model_key",
+        "raw_return_code", "ready_for_p1_extraction", "run_id", "sanitized_message",
+        "schema_id", "shard_index", "stable_exit_code", "start_index",
+    }
+
+
+@pytest.mark.parametrize(
+    "case",
+    ("malformed", "extra", "missing", "exit_mismatch", "path", "secret", "oversized", "multiline"),
+)
+def test_worker_failure_rejects_unsafe_or_noncanonical_child_diagnostics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str,
+) -> None:
+    document: dict[str, object] = {
+        "error": "checkpoint snapshot unavailable: clip_vit_b16",
+        "exit_code": 4,
+        "ready_for_p1_extraction": False,
+        "schema_id": "vea.p1.feature_extraction_error.v0",
+    }
+    if case == "malformed":
+        stdout = "{not-json}\n"
+    else:
+        if case == "extra":
+            document["unexpected"] = "x"
+        elif case == "missing":
+            document.pop("schema_id")
+        elif case == "exit_mismatch":
+            document["exit_code"] = 3
+        elif case == "path":
+            document["error"] = "/home/chltjsdh/vea/cache"
+        elif case == "secret":
+            document["error"] = "token rejected"
+        elif case == "oversized":
+            document["error"] = "x" * 161
+        elif case == "multiline":
+            document["error"] = "first line\nsecond line"
+        stdout = json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n"
+    evidence = _worker_failure_evidence(tmp_path, monkeypatch, stdout=stdout)
+    assert evidence["sanitized_message"] == "worker_process_failed"
+    assert evidence["stable_exit_code"] == EXIT_EXECUTION
+    assert evidence["raw_return_code"] == 4
+
+
+def test_worker_failure_noncanonical_stdout_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = _canonical_child_error("checkpoint snapshot unavailable: clip_vit_b16").strip()
+    evidence = _worker_failure_evidence(tmp_path, monkeypatch, stdout=document + "\n\n")
+    assert evidence["sanitized_message"] == "worker_process_failed"
+
+
 def test_resume_continues_only_missing_shards(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cli = _load_cli(); profile = load_extraction_profile(PROFILE)
     rows = stream_manifest(ROOT / profile.document["dataset"]["manifest"]["path"], expected_sha256=profile.document["dataset"]["manifest"]["sha256"])
