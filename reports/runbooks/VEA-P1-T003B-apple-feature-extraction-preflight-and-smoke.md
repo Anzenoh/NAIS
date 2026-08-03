@@ -41,7 +41,7 @@ PROFILE="$REPO_ROOT/configs/extraction_profiles/p1_1000_apple_fp32_v0.json"
 R1R3_TASK="$REPO_ROOT/tasks/VEA-P1-T003A-R1R3-extraction-runner-and-preflight-final-hardening.md"
 R1R3_REPORT="$REPO_ROOT/reports/runs/VEA-P1-T003A-R1R3-extraction-runner-and-preflight-final-hardening.md"
 MAIN_PYTHON=/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3
-DINO_PYTHON=/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python3
+DINO_PYTHON=/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python
 MAIN_RUNTIME_ROOT=/home/chltjsdh/vea/runtime/p1_apple/main
 DINO_RUNTIME_ROOT=/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated
 
@@ -105,7 +105,7 @@ printf '%s  %s\n' "$VEA_R1R3_REPORT_SHA256" "$R1R3_REPORT" | sha256sum --check -
 grep -F 'VEA-P1-T002D-SBR1 = ACCEPTED_PASS' "$R1R3_TASK" >/dev/null
 
 assert_nonlink_existing "$PROFILE" file
-printf '%s  %s\n' 61a3005606ff93ec5dd74b0895f3cb3d2644845a239f97c80fdcb6544b5e292a "$PROFILE" | sha256sum --check --strict
+printf '%s  %s\n' f5d941d02f014a314c7b9d8e26e55c2bf85e6dbb53acd9e844efe61458767f99 "$PROFILE" | sha256sum --check --strict
 while read -r expected relative; do
   assert_nonlink_existing "$REPO_ROOT/$relative" file
   printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
@@ -123,8 +123,8 @@ while read -r expected relative; do
   assert_nonlink_existing "$REPO_ROOT/$relative" file
   printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
 done <<'STAGE_A_IMPLEMENTATION'
-6336c87682442d66a49bed71352f831a0ba9fb2f513e933fd28d38ff4270c694 scripts/extract_features.py
-b06147d7d954b38291d3b56af5b3aa866279564482e802a37f67b024c18f7fdd src/vision_encoder_alignment/p1_feature_extraction.py
+ab735371603091df0eedaa34d12eee02d35f03f2df8b31f9c35a24e94fe6a9a0 scripts/extract_features.py
+f252f1199f43894eda0a1fa872e053493b2f7e00d2ef1897ace5d7a3c4dba7b8 src/vision_encoder_alignment/p1_feature_extraction.py
 dcd5dce50b9e5e2e4ac7c505efac751e9f621fd1a780495484fb02758873a13e src/vision_encoder_alignment/p1_runtime_preflight.py
 1e3d5b9b95315a61af436f61f32b1fb184fb2c9d3e0b53118437d3c8b3ecabd5 scripts/inventory_p1_checkpoint_cache.py
 7a0e8cfb54798d857ddccdf6d8288d13f8587d3ff257be56c1ef49c8db1ba4f0 scripts/validate_p1_feature_extraction.py
@@ -158,6 +158,7 @@ mkdir -m 700 -- "$EVIDENCE_ROOT"
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1
 export PIP_NO_INDEX=1 CUDA_VISIBLE_DEVICES=0 PYTHONDONTWRITEBYTECODE=1
 export PYTHONPATH="$REPO_ROOT/src"
+export VEA_APPROVED_REPO_COMMIT
 
 "$MAIN_PYTHON" -B "$REPO_ROOT/scripts/validate_p1_apple_runtime.py" \
   --mode runtime-live --repository-root "$REPO_ROOT" \
@@ -216,11 +217,14 @@ set +e
   --mode smoke --batch-size 1 > "$EVIDENCE_ROOT/10-smoke-run.json"
 SMOKE_EXIT=$?
 set -e
-if test "$SMOKE_EXIT" -eq 0; then SMOKE_STATUS=complete; else SMOKE_STATUS=failed; fi
-printf 'final_status=%s\n' "$SMOKE_STATUS" >&4
-printf 'exit_code=%s\n' "$SMOKE_EXIT" >&4
+if test "$SMOKE_EXIT" -ne 0; then
+  printf 'final_status=failed\n' >&4
+  printf 'exit_code=%s\n' "$SMOKE_EXIT" >&4
+  printf 'report_path=%s\n' "$EVIDENCE_ROOT/10-smoke-run.json" >&4
+  exit "$SMOKE_EXIT"
+fi
+printf 'extraction_status=complete\n' >&4
 printf 'report_path=%s\n' "$EVIDENCE_ROOT/10-smoke-run.json" >&4
-test "$SMOKE_EXIT" -eq 0 || exit "$SMOKE_EXIT"
 
 "$MAIN_PYTHON" -B "$REPO_ROOT/scripts/validate_p1_feature_extraction.py" \
   --profile "$PROFILE" --run-root "$OUTPUT_PARENT/$RUN_ID" \
@@ -256,6 +260,10 @@ printf '%s\n' 'READY_FOR_P1_EXTRACTION=false' > "$EVIDENCE_ROOT/14-readiness.txt
 (cd "$EVIDENCE_ROOT" && sha256sum 10-smoke-run.json 11-smoke-validation.json \
   12-run-file-sha256.txt 13-review-bundle-no-tensors.tar.gz 14-readiness.txt) \
   > "$EVIDENCE_ROOT/15-smoke-evidence-manifest.txt"
+
+printf 'final_status=PASS\n' >&4
+printf 'exit_code=0\n' >&4
+printf 'report_path=%s\n' "$EVIDENCE_ROOT/15-smoke-evidence-manifest.txt" >&4
 ```
 
 Retrieve Stage A files `00`–`05`, Stage B files `10`–`15`, and these small run

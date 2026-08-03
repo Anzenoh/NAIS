@@ -170,17 +170,19 @@ def _validate_dinov3_contract(profile: Any, repository: Path, cache_root: Path) 
         runtime_profile.runtime_root,
         interpreter_layout=runtime_profile.interpreter_layout,
     )
-    if configured != expected and configured != expected.with_name("python3"):
+    if configured != expected:
         raise FeatureExtractionError("DINOv3 interpreter contract mismatch", 4)
     model = next(item for item in profile.models if item["registry_key"] == MODEL_ORDER[2])
     snapshot = _snapshot(cache_root, model["model_id"], model["revision"])
-    validate_apple_hf_snapshot(
+    snapshot_manifest = validate_apple_hf_snapshot(
         snapshot,
         cache_root=cache_root,
         model_id=model["model_id"],
         revision=model["revision"],
         files=extractor_profile.checkpoint_files,
     )
+    if snapshot_manifest.source_sha256 != extractor_profile.identities.external_snapshot_manifest_sha256:
+        raise FeatureExtractionError("DINOv3 snapshot identity mismatch", 4)
 
 
 def _validate_dataset(rows: Sequence[Any], dataset_root: Path) -> None:

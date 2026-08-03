@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -81,6 +82,68 @@ def _load_cli():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_dinov3_contract_rejects_snapshot_identity_divergence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage A must bind the validator's snapshot identity before smoke readiness."""
+    cli = _load_cli()
+    from vision_encoder_alignment import dinov3_extraction_boundary as boundary
+    from vision_encoder_alignment import production_runtime_contract as runtime_contract
+    from vision_encoder_alignment import runtime_boundary
+    from vision_encoder_alignment import snapshot_boundary
+
+    expected = "d1326e9358930d826eaae6c18b44e384fa38b854140304951210347d7ecdac0d"
+    extractor = SimpleNamespace(
+        checkpoint_files=(),
+        identities=SimpleNamespace(external_snapshot_manifest_sha256=expected),
+    )
+    profile = SimpleNamespace(
+        document={
+            "runtime": {"dinov3": {
+                "extractor_profile": {"path": "extractor.json"},
+                "profile": {"path": "runtime.json"},
+                "interpreter": "/runtime/bin/python",
+            }},
+        },
+        models=({"registry_key": "dinov3_vit_b16", "model_id": "model/id", "revision": "a" * 40},),
+    )
+    monkeypatch.setattr(boundary, "load_dinov3_extractor_profile", lambda *args, **kwargs: extractor)
+    monkeypatch.setattr(runtime_contract, "load_production_runtime_profile", lambda *args: SimpleNamespace(runtime_root="/runtime", interpreter_layout="linux_bin"))
+    monkeypatch.setattr(runtime_contract, "validate_profile_source_bindings", lambda *args: ())
+    monkeypatch.setattr(runtime_boundary, "runtime_python_path", lambda *args, **kwargs: Path("/runtime/bin/python"))
+    monkeypatch.setattr(
+        snapshot_boundary,
+        "validate_apple_hf_snapshot",
+        lambda *args, **kwargs: SimpleNamespace(source_sha256="0" * 64),
+    )
+    with pytest.raises(cli.FeatureExtractionError, match="snapshot identity mismatch"):
+        cli._validate_dinov3_contract(profile, tmp_path, tmp_path)
+
+
+def test_dinov3_contract_rejects_obsolete_python3_interpreter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = _load_cli()
+    from vision_encoder_alignment import dinov3_extraction_boundary as boundary
+    from vision_encoder_alignment import production_runtime_contract as runtime_contract
+    from vision_encoder_alignment import runtime_boundary
+
+    profile = SimpleNamespace(
+        document={"runtime": {"dinov3": {
+            "extractor_profile": {"path": "extractor.json"},
+            "profile": {"path": "runtime.json"},
+            "interpreter": "/runtime/bin/python3",
+        }}},
+        models=({"registry_key": "dinov3_vit_b16", "model_id": "model/id", "revision": "a" * 40},),
+    )
+    monkeypatch.setattr(boundary, "load_dinov3_extractor_profile", lambda *args, **kwargs: SimpleNamespace())
+    monkeypatch.setattr(runtime_contract, "load_production_runtime_profile", lambda *args: SimpleNamespace(runtime_root="/runtime", interpreter_layout="linux_bin"))
+    monkeypatch.setattr(runtime_contract, "validate_profile_source_bindings", lambda *args: ())
+    monkeypatch.setattr(runtime_boundary, "runtime_python_path", lambda *args, **kwargs: Path("/runtime/bin/python"))
+    with pytest.raises(cli.FeatureExtractionError, match="interpreter contract mismatch"):
+        cli._validate_dinov3_contract(profile, tmp_path, tmp_path)
 
 
 def _tensors(count: int) -> dict[str, np.ndarray]:
@@ -581,7 +644,8 @@ def test_runbook_has_approval_and_stop_boundaries() -> None:
     for required in ("ACCEPTED_PASS", "10-image", "tmux", "READY_FOR_P1_EXTRACTION=false", "Do not run full extraction", "independent approval", "execution_metrics.json", "run_manifest.json"):
         assert required in text
     assert 'MAIN_PYTHON=/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3' in text
-    assert 'DINO_PYTHON=/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python3' in text
+    assert 'DINO_PYTHON=/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python' in text
+    assert 'DINO_PYTHON=/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python3' not in text
     assert 'models/*/shard-*.json' in text and 'failures/attempt-*.json' in text
     for required in ("VEA_DATASET_ROOT", "VEA_CHECKPOINT_CACHE", "VEA_T003B_EVIDENCE_ROOT", "assert_nonlink_existing"):
         assert required in text

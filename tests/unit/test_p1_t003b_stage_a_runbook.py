@@ -102,6 +102,8 @@ def test_approved_commit_gate_is_required_lowercase_and_exact_head() -> None:
     assert 'test "${#VEA_APPROVED_REPO_COMMIT}" -eq 40' in commands
     assert 'case "$VEA_APPROVED_REPO_COMMIT" in *[!0-9a-f]*) exit 2;; esac' in commands
     assert 'test "$(git rev-parse HEAD)" = "$VEA_APPROVED_REPO_COMMIT"' in commands
+    stage_a = "\n".join(_bash_blocks(_section(text, "## 3.", "## 4.")))
+    assert "export VEA_APPROVED_REPO_COMMIT" in stage_a
 
 
 def test_complete_git_cleanliness_precedes_evidence_root_creation() -> None:
@@ -172,6 +174,19 @@ def test_stage_b_is_separately_approved_derived_and_never_full_extraction() -> N
     assert 'APPROVED_COMMIT_PREFIX=${VEA_APPROVED_REPO_COMMIT:0:7}' in commands
     assert "three_encoder_${APPROVED_COMMIT_PREFIX}" in commands
     assert all("--mode full" not in block for block in _bash_blocks(text))
+
+
+def test_stage_b_reports_final_pass_only_after_evidence_manifest() -> None:
+    text = RUNBOOK.read_text(encoding="utf-8")
+    stage_b = _section(text, "## 4.", "## 5.")
+    final_evidence = _section(text, "## 5.")
+    assert "final_status=complete" not in stage_b
+    assert "extraction_status=complete" in stage_b
+    assert "final_status=failed" in stage_b
+    assert "exit_code=%s" in stage_b
+    assert "15-smoke-evidence-manifest.txt" in final_evidence
+    assert "final_status=PASS" in final_evidence
+    assert final_evidence.index("15-smoke-evidence-manifest.txt") < final_evidence.index("final_status=PASS")
 
 
 def test_repository_root_is_required_clean_and_checked_before_evidence_creation() -> None:

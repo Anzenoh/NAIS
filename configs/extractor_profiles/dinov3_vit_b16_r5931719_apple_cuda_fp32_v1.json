@@ -49,7 +49,7 @@
   ],
   "identities": {
     "current_freeze_sha256": "42ded209c200cf18b422e0626083776bf1567c5151eacf0d5f895a7bcc17e109",
-    "external_snapshot_manifest_sha256": "b0ba1938e6b036eb045b5b7cb6194456d95445bc5f1d4cd7cdf958490b3d4e0e",
+    "external_snapshot_manifest_sha256": "d1326e9358930d826eaae6c18b44e384fa38b854140304951210347d7ecdac0d",
     "persistent_freeze_sha256": "995687ed934c0a94b52a040af048f87bc8de4e5089475f70565ad37f1f33ecd9",
     "persistent_runtime_manifest_sha256": "5276f28e4f9a7416a6a10be5a029a793052bbc06f5c71e2360b6b983ffa60de4",
     "registry_sha256": "2c75cc26a27febc633b2bad479779327f35abbf36160df2805f43a4e33f48244",

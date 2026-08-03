@@ -39,7 +39,7 @@ are retained only at blocks 03, 06, 09, and 12.
 
 Execution is sequential: CLIP and SigLIP2 use
 `/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3`; DINOv3 uses
-`/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python3`. Children are launched
+`/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python`. Children are launched
 as argument arrays with `-B`, `shell=False`, and an allowlisted offline environment that
 sets repository `src` as `PYTHONPATH`. `-I` is forbidden because isolated mode ignores
 that explicit import path. DINOv3 remains in its isolated lane. Network fallback, CPU

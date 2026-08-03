@@ -148,6 +148,19 @@ def test_canonical_profile_acceptance() -> None:
     assert profile.document["profile_id"] == "p1-1000-apple-fp32-v0"
 
 
+def test_live_dinov3_interpreter_is_exact_linux_bin_python() -> None:
+    profile = load_extraction_profile(PROFILE)
+    assert profile.document["runtime"]["dinov3"]["interpreter"] == (
+        "/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python"
+    )
+    for relative in (
+        "src/vision_encoder_alignment/p1_feature_extraction.py",
+        "docs/contracts/P1_FULL_FEATURE_EXTRACTION_CONTRACT.md",
+        "reports/runbooks/VEA-P1-T003B-apple-feature-extraction-preflight-and-smoke.md",
+    ):
+        assert "dinov3_isolated/bin/python3" not in (ROOT / relative).read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     ("label", "mutate"),
     [
