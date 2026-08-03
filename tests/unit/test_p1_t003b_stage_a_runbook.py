@@ -189,6 +189,45 @@ def test_stage_b_reports_final_pass_only_after_evidence_manifest() -> None:
     assert final_evidence.index("15-smoke-evidence-manifest.txt") < final_evidence.index("final_status=PASS")
 
 
+def test_stage_b_failure_trap_stays_armed_through_final_evidence_creation() -> None:
+    """Exercise the real Stage B/final-evidence blocks, not just status strings."""
+    text = RUNBOOK.read_text(encoding="utf-8")
+    stage_b_blocks = _bash_blocks(_section(text, "## 4.", "## 5."))
+    final_blocks = _bash_blocks(_section(text, "## 5."))
+    assert len(stage_b_blocks) == len(final_blocks) == 1
+    stage_b, final_evidence = stage_b_blocks[0], final_blocks[0]
+    combined = stage_b + "\n" + final_evidence
+
+    assert re.search(r"stage_b_failure\(\) \{\n  stage_b_exit=\$\?\n", stage_b)
+    assert combined.count("trap 'stage_b_failure' ERR") == 1
+    assert combined.count("trap - ERR") == 2  # recursion guard plus final success disarm
+    assert combined.count("final_status=failed") == 1
+    assert combined.count("exit_code=%s") == 1
+    assert combined.count("report_path=%s") == 3
+    assert "set +e" in stage_b
+    assert "exit \"$stage_b_exit\"" in stage_b
+
+    expected_paths = (
+        'STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/10-smoke-run.json"',
+        'STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/11-smoke-validation.json"',
+        'STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/12-run-file-sha256.txt"',
+        'STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/13-review-bundle-no-tensors.tar.gz"',
+        'STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/14-readiness.txt"',
+        'STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/15-smoke-evidence-manifest.txt"',
+    )
+    positions = [combined.index(path) for path in expected_paths]
+    assert positions == sorted(positions)
+    manifest_write = '> "$EVIDENCE_ROOT/15-smoke-evidence-manifest.txt"'
+    final_disarm = final_evidence.rindex("trap - ERR")
+    assert final_evidence.index(manifest_write) < final_disarm < final_evidence.index("final_status=PASS")
+    assert stage_b.index("extraction_status=complete") > stage_b.index(
+        '--mode smoke --batch-size 1 > "$EVIDENCE_ROOT/10-smoke-run.json"'
+    )
+    assert 'SHARD_DIRECTORY=$(find "$OUTPUT_PARENT/$RUN_ID/models" -type d -name shards -print -quit)' in stage_b
+    assert 'SHARD_FIND_EXIT=$?' in stage_b
+    assert 'test "$SHARD_FIND_EXIT" -eq 0' in stage_b
+
+
 def test_repository_root_is_required_clean_and_checked_before_evidence_creation() -> None:
     text = RUNBOOK.read_text(encoding="utf-8")
     setup = _section(text, "## 1.", "## 2.")

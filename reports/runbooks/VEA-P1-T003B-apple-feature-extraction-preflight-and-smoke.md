@@ -209,23 +209,31 @@ test ! -L "$OUTPUT_PARENT/$RUN_ID"
 
 exec 3>&1
 if test -w /dev/tty; then exec 4>/dev/tty || exec 4>&3; else exec 4>&3; fi
-set +e
+STAGE_B_FAILURE_REPORTED=0
+STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/10-smoke-run.json"
+stage_b_failure() {
+  stage_b_exit=$?
+  set +e
+  if test "$STAGE_B_FAILURE_REPORTED" -eq 0; then
+    STAGE_B_FAILURE_REPORTED=1
+    trap - ERR
+    printf 'final_status=failed\n' >&4
+    printf 'exit_code=%s\n' "$stage_b_exit" >&4
+    printf 'report_path=%s\n' "$STAGE_B_REPORT_PATH" >&4
+  fi
+  exit "$stage_b_exit"
+}
+trap 'stage_b_failure' ERR
+
 "$MAIN_PYTHON" -B "$REPO_ROOT/scripts/extract_features.py" run \
   --profile "$PROFILE" --repository-root "$REPO_ROOT" \
   --dataset-root "$DATASET_ROOT" --cache-root "$CACHE_ROOT" \
   --output-parent "$OUTPUT_PARENT" --run-id "$RUN_ID" \
   --mode smoke --batch-size 1 > "$EVIDENCE_ROOT/10-smoke-run.json"
-SMOKE_EXIT=$?
-set -e
-if test "$SMOKE_EXIT" -ne 0; then
-  printf 'final_status=failed\n' >&4
-  printf 'exit_code=%s\n' "$SMOKE_EXIT" >&4
-  printf 'report_path=%s\n' "$EVIDENCE_ROOT/10-smoke-run.json" >&4
-  exit "$SMOKE_EXIT"
-fi
 printf 'extraction_status=complete\n' >&4
 printf 'report_path=%s\n' "$EVIDENCE_ROOT/10-smoke-run.json" >&4
 
+STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/11-smoke-validation.json"
 "$MAIN_PYTHON" -B "$REPO_ROOT/scripts/validate_p1_feature_extraction.py" \
   --profile "$PROFILE" --run-root "$OUTPUT_PARENT/$RUN_ID" \
   > "$EVIDENCE_ROOT/11-smoke-validation.json"
@@ -240,7 +248,10 @@ for model in clip_vit_b16 siglip2_base_p16_224 dinov3_vit_b16; do
   test -f "$OUTPUT_PARENT/$RUN_ID/models/$model/execution_metrics.json"
   test -f "$OUTPUT_PARENT/$RUN_ID/models/$model/model_manifest.json"
 done
-test -z "$(find "$OUTPUT_PARENT/$RUN_ID/models" -type d -name shards -print -quit)"
+SHARD_DIRECTORY=$(find "$OUTPUT_PARENT/$RUN_ID/models" -type d -name shards -print -quit)
+SHARD_FIND_EXIT=$?
+test "$SHARD_FIND_EXIT" -eq 0
+test -z "$SHARD_DIRECTORY"
 ```
 
 `run_manifest.json` must be the final run artifact. Do not run `resume` automatically.
@@ -250,17 +261,22 @@ finalization residue, then stop for independent review.
 ## 5. Final evidence and body-free review package
 
 ```bash
+STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/12-run-file-sha256.txt"
 find "$OUTPUT_PARENT/$RUN_ID" -type f -print0 | sort -z | xargs -0 sha256sum \
   > "$EVIDENCE_ROOT/12-run-file-sha256.txt"
 
+STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/13-review-bundle-no-tensors.tar.gz"
 find "$OUTPUT_PARENT/$RUN_ID" -type f ! -name '*.safetensors' -print0 | sort -z | \
   tar --null -T - -czf "$EVIDENCE_ROOT/13-review-bundle-no-tensors.tar.gz"
 
+STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/14-readiness.txt"
 printf '%s\n' 'READY_FOR_P1_EXTRACTION=false' > "$EVIDENCE_ROOT/14-readiness.txt"
+STAGE_B_REPORT_PATH="$EVIDENCE_ROOT/15-smoke-evidence-manifest.txt"
 (cd "$EVIDENCE_ROOT" && sha256sum 10-smoke-run.json 11-smoke-validation.json \
   12-run-file-sha256.txt 13-review-bundle-no-tensors.tar.gz 14-readiness.txt) \
   > "$EVIDENCE_ROOT/15-smoke-evidence-manifest.txt"
 
+trap - ERR
 printf 'final_status=PASS\n' >&4
 printf 'exit_code=0\n' >&4
 printf 'report_path=%s\n' "$EVIDENCE_ROOT/15-smoke-evidence-manifest.txt" >&4
