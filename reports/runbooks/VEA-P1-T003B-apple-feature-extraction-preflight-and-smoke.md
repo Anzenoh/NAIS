@@ -78,6 +78,14 @@ assert_nonlink_existing() {
 }
 ```
 
+The process topology is intentionally two-layered. `MAIN_PYTHON` launches the outer
+preprocessing/orchestration worker for CLIP, SigLIP2, and DINOv3, so shared Pillow and
+NumPy preprocessing always runs in the main runtime. CLIP and SigLIP2 execute there as
+well. Only the model-bearing DINOv3 child uses `DINO_PYTHON`; its isolated lane,
+runtime profile, offline environment, and process boundary remain unchanged. This
+supersedes the ambiguous R3R1 wording that isolated Python was required for "all live
+Apple DINO execution."
+
 ## 2. All read-only checks before evidence-root creation
 
 The following entire block must succeed before `mkdir "$EVIDENCE_ROOT"`. The
@@ -123,8 +131,8 @@ while read -r expected relative; do
   assert_nonlink_existing "$REPO_ROOT/$relative" file
   printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
 done <<'STAGE_A_IMPLEMENTATION'
-ab735371603091df0eedaa34d12eee02d35f03f2df8b31f9c35a24e94fe6a9a0 scripts/extract_features.py
-f252f1199f43894eda0a1fa872e053493b2f7e00d2ef1897ace5d7a3c4dba7b8 src/vision_encoder_alignment/p1_feature_extraction.py
+d7b869b83d2a05fd48e5863c10c8ba6890abb038c8cc74247b011d8bee84857b scripts/extract_features.py
+3d81e229363fa31bb6fabe3be4c3e7b5dc63cc3e2195553c7ec5ab83768531c3 src/vision_encoder_alignment/p1_feature_extraction.py
 dcd5dce50b9e5e2e4ac7c505efac751e9f621fd1a780495484fb02758873a13e src/vision_encoder_alignment/p1_runtime_preflight.py
 1e3d5b9b95315a61af436f61f32b1fb184fb2c9d3e0b53118437d3c8b3ecabd5 scripts/inventory_p1_checkpoint_cache.py
 7a0e8cfb54798d857ddccdf6d8288d13f8587d3ff257be56c1ef49c8db1ba4f0 scripts/validate_p1_feature_extraction.py
@@ -173,6 +181,36 @@ export VEA_APPROVED_REPO_COMMIT
   --profile "$PROFILE" --repository-root "$REPO_ROOT" \
   --output-json "$EVIDENCE_ROOT/02-plan.json" \
   > /dev/null
+
+"$MAIN_PYTHON" -B - \
+  "$EVIDENCE_ROOT/02-plan.json" "$PROFILE" "$MAIN_PYTHON" "$DINO_PYTHON" \
+  "$REPO_ROOT" <<'PY'
+import json
+import pathlib
+import sys
+
+plan_path, profile_path, main_python, dino_python, repository_root = sys.argv[1:]
+plan = json.loads(pathlib.Path(plan_path).read_text(encoding="utf-8"))
+profile = json.loads(pathlib.Path(profile_path).read_text(encoding="utf-8"))
+models = ["clip_vit_b16", "siglip2_base_p16_224", "dinov3_vit_b16"]
+expected = [
+    [
+        main_python,
+        "-B",
+        f"{repository_root}/scripts/extract_features.py",
+        "_worker",
+        "--model",
+        model,
+    ]
+    for model in models
+]
+if plan.get("commands") != expected:
+    raise SystemExit("Stage A outer worker topology mismatch")
+if profile["runtime"]["main"]["interpreter"] != main_python:
+    raise SystemExit("main runtime identity mismatch")
+if profile["runtime"]["dinov3"]["interpreter"] != dino_python:
+    raise SystemExit("DINO model-child runtime identity mismatch")
+PY
 
 "$MAIN_PYTHON" -B "$REPO_ROOT/scripts/extract_features.py" preflight \
   --profile "$PROFILE" --repository-root "$REPO_ROOT" \

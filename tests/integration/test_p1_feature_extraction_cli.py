@@ -24,6 +24,7 @@ from vision_encoder_alignment.p1_feature_extraction import (
     complete_run,
     initial_run_state,
     initialize_run_artifacts,
+    lane_command_plan,
     load_extraction_profile,
     offline_environment,
     plan_shards,
@@ -383,6 +384,12 @@ def test_fake_three_encoder_smoke_round_trip(tmp_path: Path, monkeypatch: pytest
     assert cli.main(_arguments(tmp_path)) == 0
     run_root = tmp_path / "outputs" / RUN_ID
     assert validate_run(run_root, profile)["image_count"] == 10
+    prefixes = lane_command_plan(profile, ROOT)
+    assert len(calls) == len(prefixes) == len(MODEL_ORDER)
+    for (command, _environment), prefix, model in zip(calls, prefixes, MODEL_ORDER, strict=True):
+        assert tuple(command[: len(prefix)]) == prefix
+        assert command.count("--model") == 1
+        assert prefix[-2:] == ("--model", model)
     assert [call[0][call[0].index("--model") + 1] for call in calls] == list(MODEL_ORDER)
     assert all("-I" not in call[0] and call[0][1] == "-B" for call in calls)
     assert all(call[1]["HF_HUB_OFFLINE"] == "1" and call[1]["CUDA_VISIBLE_DEVICES"] == "0" for call in calls)
@@ -392,6 +399,26 @@ def test_fake_three_encoder_smoke_round_trip(tmp_path: Path, monkeypatch: pytest
     files = {path.relative_to(run_root).as_posix() for path in run_root.rglob("*") if path.is_file()}
     assert all("/shards/" not in path for path in files)
     assert all(f"models/{model}/execution_metrics.json" in files for model in MODEL_ORDER)
+
+
+def test_dino_outer_worker_keeps_isolated_model_runtime_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = _load_cli()
+    profile = load_extraction_profile(PROFILE)
+    import vision_encoder_alignment.extractors as extractors
+
+    class CapturedConfig:
+        def __init__(self, profile_path, **kwargs):
+            self.profile_path = profile_path
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(extractors, "DINOv3ExtractorConfig", CapturedConfig)
+    monkeypatch.setattr(extractors, "DINOv3VisionEncoderExtractor", lambda config: config)
+    config = cli._extractor(MODEL_ORDER[2], profile, ROOT, tmp_path)
+    dino_interpreter = Path(profile.document["runtime"]["dinov3"]["interpreter"])
+    assert config.kwargs["runtime_root"] == dino_interpreter.parent.parent
+    assert config.kwargs["execution_selector"] == "dinov3_apple_cuda_fp32_v1"
 
 
 @pytest.mark.parametrize("return_code", [-9, 300, 9])

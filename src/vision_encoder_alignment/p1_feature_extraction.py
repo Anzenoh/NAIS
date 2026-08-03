@@ -441,11 +441,10 @@ def lane_command_plan(profile: ExtractionProfile, repository_root: str | Path) -
     root = str(Path(repository_root).resolve())
     runtime = profile.document["runtime"]
     main = runtime["main"]["interpreter"]
-    dino = runtime["dinov3"]["interpreter"]
     return (
         (main, "-B", f"{root}/scripts/extract_features.py", "_worker", "--model", MODEL_ORDER[0]),
         (main, "-B", f"{root}/scripts/extract_features.py", "_worker", "--model", MODEL_ORDER[1]),
-        (dino, "-B", f"{root}/scripts/extract_features.py", "_worker", "--model", MODEL_ORDER[2]),
+        (main, "-B", f"{root}/scripts/extract_features.py", "_worker", "--model", MODEL_ORDER[2]),
     )
 
 

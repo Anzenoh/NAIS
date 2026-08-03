@@ -166,6 +166,23 @@ def test_stage_a_evidence_contract_is_exact_and_stops_before_stage_b() -> None:
     assert "Stop here and submit Stage A evidence for independent approval." in stage_a
 
 
+def test_stage_a_plan_separates_outer_workers_from_dino_model_child() -> None:
+    text = RUNBOOK.read_text(encoding="utf-8")
+    stage_a = _section(text, "## 3.", "## 4.")
+    setup = _section(text, "## 1.", "## 2.")
+    assert "MAIN_PYTHON` launches the outer" in setup
+    assert "Only the model-bearing DINOv3 child uses `DINO_PYTHON`" in setup
+    assert "supersedes the ambiguous R3R1 wording" in setup
+    for required in (
+        'plan.get("commands") != expected',
+        'profile["runtime"]["main"]["interpreter"] != main_python',
+        'profile["runtime"]["dinov3"]["interpreter"] != dino_python',
+        '"clip_vit_b16", "siglip2_base_p16_224", "dinov3_vit_b16"',
+        'f"{repository_root}/scripts/extract_features.py"',
+    ):
+        assert required in stage_a
+
+
 def test_stage_b_is_separately_approved_derived_and_never_full_extraction() -> None:
     text = RUNBOOK.read_text(encoding="utf-8")
     stage_b = _section(text, "## 4.", "## 5.")

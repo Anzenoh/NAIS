@@ -47,6 +47,8 @@ from vision_encoder_alignment.p1_feature_extraction import (
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE = ROOT / "configs/extraction_profiles/p1_1000_apple_fp32_v0.json"
+MAIN_RUNTIME_PROFILE = ROOT / "configs/runtime_profiles/p1_apple_main_cuda_fp32_v0.json"
+DINO_RUNTIME_PROFILE = ROOT / "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json"
 RUN_ID = "20260730T120000Z_p1_1000_three_encoder_e518a51"
 
 
@@ -161,6 +163,24 @@ def test_live_dinov3_interpreter_is_exact_linux_bin_python() -> None:
         assert "dinov3_isolated/bin/python3" not in (ROOT / relative).read_text(encoding="utf-8")
 
 
+def test_main_runtime_has_pillow_and_dinov3_runtime_is_pillow_free() -> None:
+    main = json.loads(MAIN_RUNTIME_PROFILE.read_text(encoding="utf-8"))
+    dino = json.loads(DINO_RUNTIME_PROFILE.read_text(encoding="utf-8"))
+    assert "pillow==10.3.0" in main["packages"]["direct_requirements"]
+    assert any(
+        item["distribution"] == "pillow" and item["version"] == "10.3.0"
+        for item in main["packages"]["artifacts"]
+    )
+    assert all(
+        not requirement.lower().startswith("pillow==")
+        for requirement in dino["packages"]["direct_requirements"]
+    )
+    assert all(
+        item["distribution"].lower() != "pillow"
+        for item in dino["packages"]["artifacts"]
+    )
+
+
 @pytest.mark.parametrize(
     ("label", "mutate"),
     [
@@ -270,9 +290,12 @@ def test_output_overlap_rejected(tmp_path: Path) -> None:
 
 
 def test_lane_plan_is_sequential_and_separate() -> None:
-    commands = lane_command_plan(load_extraction_profile(PROFILE), ROOT)
-    assert tuple(command[-1] for command in commands) == MODEL_ORDER
-    assert commands[0][0] == commands[1][0] != commands[2][0]
+    profile = load_extraction_profile(PROFILE)
+    commands = lane_command_plan(profile, ROOT)
+    main = profile.document["runtime"]["main"]["interpreter"]
+    assert tuple(command[command.index("--model") + 1] for command in commands) == MODEL_ORDER
+    assert all(command[0] == main for command in commands)
+    assert all(command.count("--model") == 1 for command in commands)
     assert all("-I" not in command and command[1] == "-B" for command in commands)
 
 

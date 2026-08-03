@@ -37,13 +37,24 @@ are retained only at blocks 03, 06, 09, and 12.
 
 ## Runtime and child import policy
 
-Execution is sequential: CLIP and SigLIP2 use
-`/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3`; DINOv3 uses
-`/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python`. Children are launched
-as argument arrays with `-B`, `shell=False`, and an allowlisted offline environment that
-sets repository `src` as `PYTHONPATH`. `-I` is forbidden because isolated mode ignores
-that explicit import path. DINOv3 remains in its isolated lane. Network fallback, CPU
-fallback, autocast, mixed precision, training, and checkpoint mutation are forbidden.
+Execution is sequential and has two explicit process layers. All three outer
+`extract_features.py _worker` processes use the Pillow-capable main interpreter at
+`/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3`; those processes own shared
+Pillow/NumPy canonical preprocessing and orchestration. CLIP and SigLIP2 also execute
+their models in those outer main-runtime processes. The DINO outer process instead
+delegates only model loading and forward execution to the isolated child interpreter at
+`/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python`.
+
+The DINO child is launched as an argument array with `-B`, `shell=False`, and an
+allowlisted offline environment that sets repository `src` as `PYTHONPATH`. `-I` is
+forbidden because isolated mode ignores that explicit import path. The extraction
+profile's DINO interpreter, lane ID, runtime profile, and recorded environment identity
+continue to describe this model-bearing child. The earlier R3R1 phrase requiring the
+isolated Python for "all live Apple DINO execution" is superseded by this process-layer
+definition; it applies to the model-bearing child, not the outer preprocessing worker.
+Both runtime interpreters and runtime roots are validated before any outer launch.
+Network fallback, CPU fallback, autocast, mixed precision, training, and checkpoint
+mutation are forbidden.
 
 Every repository, dataset root, cache root, runtime interpreter/runtime root, output parent,
 evidence parent, and run-root path is supplied as a canonical absolute path. Validation
@@ -160,3 +171,7 @@ after all repository, predecessor, runtime, and all-component path checks pass. 
 is a separately approved first-ten-image, batch-one, FP32 smoke followed by model-free
 validation and another stop. Neither stage authorizes full extraction, full-batch-size
 selection, cleanup, automatic retry, or automatic resume.
+
+The Stage A plan records main/main/main outer worker prefixes in model order. Its DINO
+lane metadata remains bound to the separate isolated model child; this distinction must
+be checked before Stage A evidence can be submitted for smoke approval.

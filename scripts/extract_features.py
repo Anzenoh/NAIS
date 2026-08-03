@@ -34,6 +34,7 @@ from vision_encoder_alignment.p1_feature_extraction import (  # noqa: E402
     execution_plan,
     initial_run_state,
     initialize_run_artifacts,
+    lane_command_plan,
     load_extraction_profile,
     offline_environment,
     ordered_batches,
@@ -543,9 +544,13 @@ def _run_or_resume(args: argparse.Namespace, *, resume: bool) -> int:
         progress = {model: 0 for model in MODEL_ORDER}
     env = offline_environment(repository)
     runtime = profile.document["runtime"]
-    interpreters = (runtime["main"]["interpreter"], runtime["main"]["interpreter"], runtime["dinov3"]["interpreter"])
+    command_prefixes = lane_command_plan(profile, repository)
+    runtime_interpreters = (
+        runtime["main"]["interpreter"],
+        runtime["dinov3"]["interpreter"],
+    )
     if os.name != "nt":
-        for interpreter in dict.fromkeys(interpreters):
+        for interpreter in runtime_interpreters:
             path = validate_non_link_path(
                 interpreter, expected_kind="file", label="runtime interpreter",
             )
@@ -554,14 +559,14 @@ def _run_or_resume(args: argparse.Namespace, *, resume: bool) -> int:
             )
     plans = plan_shards(tuple(row.image_id for row in rows))
     by_model = {item["registry_key"]: item for item in profile.models}
-    for model, interpreter in zip(MODEL_ORDER, interpreters, strict=True):
+    for model, command_prefix in zip(MODEL_ORDER, command_prefixes, strict=True):
         metrics = run_root / "models" / model / "execution_metrics.json"
         if progress[model] == len(plans) and metrics.is_file() and not metrics.is_symlink():
             continue
-        command = [interpreter, "-B", str(Path(__file__).resolve()), "_worker",
+        command = [*command_prefix,
                    "--profile", str(Path(args.profile).resolve()), "--repository-root", str(repository),
                    "--dataset-root", str(dataset_root), "--cache-root", str(cache_root),
-                   "--run-root", str(run_root), "--model", model, "--mode", args.mode,
+                   "--run-root", str(run_root), "--mode", args.mode,
                    "--batch-size", str(args.batch_size), "--start-shard", str(progress[model])]
         _progress_marker("model_start", model, "execution_started")
         try:
