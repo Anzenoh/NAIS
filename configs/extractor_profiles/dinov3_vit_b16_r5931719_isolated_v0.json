@@ -142,12 +142,12 @@
     {
       "path": "scripts/dinov3_extraction_worker.py",
       "role": "isolated_worker",
-      "sha256": "d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f"
+      "sha256": "d1e9ff2b61f9feab120e464966ac106efb7373aa03be2807d402ed6f48e8a1c5"
     },
     {
       "path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py",
       "role": "extraction_boundary",
-      "sha256": "95fd65746e3c15373cf7a035ccb121307881b72db82622c870f396c7df7e15fe"
+      "sha256": "38cc3030215ed419cc90b16ee5e4562c99fe2f978276cb8e22e9e4f6b0583287"
     },
     {
       "path": "src/vision_encoder_alignment/dinov3_production_identity.py",
@@ -172,7 +172,7 @@
     {
       "path": "src/vision_encoder_alignment/extractors/dinov3.py",
       "role": "public_extractor",
-      "sha256": "dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82"
+      "sha256": "3527d5645e98c66f01c1a42b8eb1415055ba89d81bcbc5b5d087d1526449cb10"
     },
     {
       "path": "src/vision_encoder_alignment/extractors/siglip2.py",
@@ -212,12 +212,12 @@
     {
       "path": "src/vision_encoder_alignment/runtime_boundary.py",
       "role": "runtime_boundary",
-      "sha256": "3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063"
+      "sha256": "cb72edbf0f889991cac164703892a4e2d6c52b062b07ef193668da5c08f560cc"
     },
     {
       "path": "src/vision_encoder_alignment/snapshot_boundary.py",
       "role": "snapshot_boundary",
-      "sha256": "fa365b893016ab7188fe73cd3c365f7695f242356ced05f00da386180a21bd54"
+      "sha256": "2c0f81c01427063b722def129bbafe4bf9b64389e55b7fec9074072eb12d5dd7"
     }
   ],
   "profile_id": "dinov3-vitb16-r5931719-isolated-extractor-v0",

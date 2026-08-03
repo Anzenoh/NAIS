@@ -53,6 +53,7 @@ from ..snapshot_boundary import (
     SnapshotBoundaryError,
     load_snapshot_profile,
     resolve_default_snapshot_root,
+    validate_apple_hf_snapshot,
     validate_snapshot_root,
 )
 from .base import (
@@ -366,11 +367,12 @@ def _load_extractor_context(config: DINOv3ExtractorConfig) -> _ExtractorContext:
         snapshot = _resolve_root(snapshot, "dinov3_config.snapshot_root", repository)
         if _contains(runtime, snapshot) or _contains(snapshot, runtime):
             _fail("dinov3_config.roots", "runtime and snapshot roots overlap")
-        snapshot_manifest = validate_snapshot_root(
+        snapshot_manifest = validate_apple_hf_snapshot(
             snapshot,
-            snapshot_profile,
-            repository_root=repository,
-            persistent_runtime_root=runtime,
+            cache_root=snapshot.parents[2],
+            model_id=MODEL_ID,
+            revision=REVISION,
+            files=profile.checkpoint_files,
         )
         if (
             snapshot_profile.source_sha256 != identities.snapshot_profile_sha256

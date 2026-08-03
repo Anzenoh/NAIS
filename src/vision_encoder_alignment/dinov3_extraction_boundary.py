@@ -39,7 +39,12 @@ from .production_runtime_contract import (
     load_production_runtime_profile,
     validate_profile_source_bindings,
 )
-from .snapshot_boundary import load_snapshot_profile, validate_snapshot_root
+from .snapshot_boundary import (
+    APPLE_HF_SNAPSHOT_LAYOUT_ID,
+    load_snapshot_profile,
+    validate_apple_hf_snapshot,
+    validate_snapshot_root,
+)
 
 
 EXTRACTION_REQUEST_SCHEMA_ID = "vea.dinov3_extraction_request.v0"
@@ -419,6 +424,10 @@ class DINOv3ExtractorProfile:
     def production_sources(self) -> tuple[Any, ...]:
         return tuple(self.document.production_sources)
 
+    @property
+    def checkpoint_files(self) -> tuple[Any, ...]:
+        return tuple(self.document.checkpoint_files)
+
 
 @dataclass(frozen=True, slots=True)
 class DINOv3AppleInvocationPlan:
@@ -554,7 +563,7 @@ _PROFILE_FIELDS = frozenset(
         "token_layout",
     }
 )
-_APPLE_PROFILE_FIELDS = _PROFILE_FIELDS | frozenset({"runtime_profile"})
+_APPLE_PROFILE_FIELDS = _PROFILE_FIELDS | frozenset({"runtime_profile", "snapshot_layout"})
 
 
 def _validate_profile(
@@ -575,6 +584,18 @@ def _validate_profile(
     for key, required in expected.items():
         if value[key] != required:
             _fail("profile_identity_mismatch", f"profile.{key}", f"expected {required!r}")
+    if is_apple:
+        layout = _exact_mapping(
+            value["snapshot_layout"],
+            frozenset({"layout_id", "model_id", "revision"}),
+            "profile.snapshot_layout",
+        )
+        if dict(layout) != {
+            "layout_id": APPLE_HF_SNAPSHOT_LAYOUT_ID,
+            "model_id": MODEL_ID,
+            "revision": REVISION,
+        }:
+            _fail("profile_identity_mismatch", "profile.snapshot_layout", "layout mismatch")
     load_production_source_identities(value)
     model = _exact_mapping(
         value["model"],
@@ -1133,11 +1154,21 @@ def invoke_dinov3_extraction_worker(
     validate_production_sources(repository, profile_file)
     snapshot_profile_path = repository / str(profile.sources.snapshot_profile_path)
     snapshot_profile = load_snapshot_profile(snapshot_profile_path)
-    snapshot_manifest = validate_snapshot_root(
-        snapshot,
-        snapshot_profile,
-        repository_root=repository,
-        persistent_runtime_root=runtime,
+    snapshot_manifest = (
+        validate_apple_hf_snapshot(
+            snapshot,
+            cache_root=snapshot.parents[2],
+            model_id=MODEL_ID,
+            revision=REVISION,
+            files=profile.checkpoint_files,
+        )
+        if is_apple
+        else validate_snapshot_root(
+            snapshot,
+            snapshot_profile,
+            repository_root=repository,
+            persistent_runtime_root=runtime,
+        )
     )
     runtime_profile_path = repository / str(profile.sources.runtime_profile_path)
     if is_apple:

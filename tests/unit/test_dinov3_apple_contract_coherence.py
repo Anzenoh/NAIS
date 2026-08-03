@@ -125,7 +125,7 @@ def test_apple_context_never_enters_legacy_runtime_helpers(
     monkeypatch.setattr(extractor_module, "runtime_python_path", lambda *args, **kwargs: Path("/bin/python"))
     monkeypatch.setattr(
         extractor_module,
-        "validate_snapshot_root",
+        "validate_apple_hf_snapshot",
         lambda *args, **kwargs: SimpleNamespace(
             source_sha256=profile.identities.external_snapshot_manifest_sha256
         ),
@@ -254,7 +254,7 @@ def test_apple_invoke_uses_shell_free_plan(
         lambda *args: (),
     )
     monkeypatch.setattr(
-        "vision_encoder_alignment.dinov3_extraction_boundary.validate_snapshot_root",
+        "vision_encoder_alignment.dinov3_extraction_boundary.validate_apple_hf_snapshot",
         lambda *args, **kwargs: SimpleNamespace(
             source_sha256=profile.identities.external_snapshot_manifest_sha256
         ),
@@ -263,9 +263,9 @@ def test_apple_invoke_uses_shell_free_plan(
     def plan(**kwargs: object) -> DINOv3AppleInvocationPlan:
         captured["plan"] = kwargs
         return DINOv3AppleInvocationPlan(
-            command=(str(runtime / "venv/bin/python"), "-B", "worker.py"),
+            command=(str(runtime / "bin/python"), "-B", "worker.py"),
             environment={"CUDA_VISIBLE_DEVICES": "0", "HF_HUB_OFFLINE": "1"},
-            interpreter=runtime / "venv/bin/python",
+            interpreter=runtime / "bin/python",
             selector=DINOV3_SELECTOR,
             device="cuda:0",
             dtype="float32",

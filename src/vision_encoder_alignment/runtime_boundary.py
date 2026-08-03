@@ -2388,7 +2388,7 @@ def runtime_python_path(
     root = _resolved_directory(runtime_root, "runtime_root")
     layouts = {
         "windows_scripts": "venv/Scripts/python.exe",
-        "linux_bin": "venv/bin/python",
+        "linux_bin": "bin/python",
     }
     if interpreter_layout not in layouts:
         _fail(

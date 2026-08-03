@@ -563,6 +563,7 @@ def run_worker(
         from vision_encoder_alignment.snapshot_boundary import (
             load_snapshot_profile,
             snapshot_files_directory,
+            validate_apple_hf_snapshot,
             validate_snapshot_root,
         )
 
@@ -586,11 +587,21 @@ def run_worker(
         if request.extractor_profile_sha256 != profile.sha256:
             raise WorkerValidationError("extractor profile SHA-256 mismatch")
         snapshot_profile = load_snapshot_profile(snapshot_profile_path)
-        snapshot_manifest = validate_snapshot_root(
-            snapshot_root,
-            snapshot_profile,
-            repository_root=repository,
-            persistent_runtime_root=runtime_root,
+        snapshot_manifest = (
+            validate_apple_hf_snapshot(
+                snapshot_root,
+                cache_root=snapshot_root.parents[2],
+                model_id=MODEL_ID,
+                revision=REVISION,
+                files=profile.checkpoint_files,
+            )
+            if execution_selector == APPLE_EXECUTION_SELECTOR
+            else validate_snapshot_root(
+                snapshot_root,
+                snapshot_profile,
+                repository_root=repository,
+                persistent_runtime_root=runtime_root,
+            )
         )
         identities = profile.identities
         if execution_selector == APPLE_EXECUTION_SELECTOR:
@@ -693,7 +704,11 @@ def run_worker(
             raise WorkerValidationError("raw input SHA-256 mismatch")
         normalized = _manual_preprocess(images)
         normalized_sha256 = _sha256_bytes(normalized.tobytes(order="C"))
-        snapshot_files = snapshot_files_directory(snapshot_root)
+        snapshot_files = (
+            snapshot_root
+            if execution_selector == APPLE_EXECUTION_SELECTOR
+            else snapshot_files_directory(snapshot_root)
+        )
         if execution_selector == LEGACY_EXECUTION_SELECTOR:
             model, _ = _load_model(snapshot_files)
         else:
@@ -762,8 +777,8 @@ def run_worker(
             "identities": {
                 "external_snapshot_manifest_sha256": snapshot_manifest.source_sha256,
                 "extractor_profile_sha256": profile.sha256,
-                "persistent_freeze_sha256": runtime_manifest.candidate_freeze_sha256,
-                "persistent_runtime_manifest_sha256": runtime_manifest.source_sha256,
+                "persistent_freeze_sha256": profile.identities.persistent_freeze_sha256,
+                "persistent_runtime_manifest_sha256": profile.identities.persistent_runtime_manifest_sha256,
                 "runtime_profile_sha256": runtime_profile.source_sha256,
                 "snapshot_profile_sha256": snapshot_profile.source_sha256,
             },

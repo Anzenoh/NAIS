@@ -16,6 +16,23 @@ _LIVE_PROFILE_BYTES = (ROOT / identity.EXTRACTOR_PROFILE_RELATIVE_PATH).read_byt
 _test_support._DINOV3_LIVE_PROFILE_BYTES = len(_LIVE_PROFILE_BYTES)
 _test_support._DINOV3_LIVE_PROFILE_SHA256 = hashlib.sha256(_LIVE_PROFILE_BYTES).hexdigest()
 
+# Keep this historical transaction fixture independent of live production-source
+# evolution while still requiring the exact current bytes declared by the live profile.
+_live_profile = json.loads(_LIVE_PROFILE_BYTES)
+for _row in _live_profile["production_sources"]:
+    if _row["path"] in _test_support._DINOV3_REGISTRY_PIN_HASHES:
+        _test_support._DINOV3_REGISTRY_PIN_HASHES[_row["path"]] = _row["sha256"]
+_snapshot_boundary = _test_support._replace_assignment_value(
+    (ROOT / identity.SNAPSHOT_BOUNDARY_RELATIVE_PATH).read_bytes(),
+    "PERSISTENT_RUNTIME_PROFILE_SHA256",
+    f'''(
+    "{_test_support._DINOV3_REGISTRY_PIN_HASHES[identity.RUNTIME_PROFILE_RELATIVE_PATH]}"
+)''',
+)
+_test_support._DINOV3_REGISTRY_PIN_HASHES[identity.SNAPSHOT_BOUNDARY_RELATIVE_PATH] = (
+    hashlib.sha256(_snapshot_boundary).hexdigest()
+)
+
 
 def _copy_file(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)

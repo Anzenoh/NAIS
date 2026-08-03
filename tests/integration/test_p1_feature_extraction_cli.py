@@ -43,6 +43,11 @@ RUN_ID = "20260730T120000Z_p1_1000_three_encoder_e518a51"
 
 @pytest.fixture(autouse=True)
 def _supported_no_clobber_link(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    head = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True, shell=False,
+    ).stdout.strip()
+    monkeypatch.setenv("VEA_APPROVED_REPO_COMMIT", head)
     probe_source = tmp_path / ".link-source"
     probe_target = tmp_path / ".link-target"
     probe_source.write_bytes(b"probe")
@@ -260,9 +265,33 @@ def test_preflight_success_with_synthetic_local_resources(tmp_path: Path) -> Non
         interpreter_is_file=lambda path: True,
         host_name=lambda: "apple",
         gpu_runner=gpu_runner,
+        dinov3_validator=lambda profile, repository, cache: None,
     )
     assert result["classification"] == "P1_FEATURE_EXTRACTION_PREFLIGHT_VALID"
+    assert result["operation_counts"] == {
+        "cache_write": 0,
+        "credential_read": 0,
+        "model_load": 0,
+        "network": 0,
+        "package": 0,
+    }
     assert calls == [(('nvidia-smi', '--query-gpu=index,name', '--format=csv,noheader,nounits'), False)]
+
+
+def test_progress_markers_are_bounded_stderr_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = _load_cli()
+    cli._progress_marker("model_start", "dinov3_vit_b16", "execution_started")
+    cli._progress_marker(
+        "model_failure", "dinov3_vit_b16", "worker_process_failed", exit_code=5
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.splitlines() == [
+        "model_start model=dinov3_vit_b16 classification=execution_started",
+        "model_failure model=dinov3_vit_b16 classification=worker_process_failed exit_code=5",
+    ]
 
 
 def test_preflight_empty_snapshot_is_resource_failure(tmp_path: Path) -> None:

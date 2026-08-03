@@ -85,19 +85,20 @@ def test_legacy_apple_hybrid_graph_is_rejected() -> None:
 
 def test_linux_interpreter_layout_is_explicit(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
-    interpreter = runtime / "venv/bin/python"
+    interpreter = runtime / "bin/python"
     interpreter.parent.mkdir(parents=True)
     interpreter.write_bytes(b"fake-python")
     assert runtime_python_path(runtime, interpreter_layout="linux_bin") == interpreter.resolve()
+    assert not (runtime / "venv/bin/python").exists()
 
 
 def test_apple_environment_is_offline_and_cuda_explicit(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     repository = tmp_path / "repository"
     workspace = tmp_path / "workspace"
-    for directory in (runtime / "venv/bin", repository, workspace):
+    for directory in (runtime / "bin", repository, workspace):
         directory.mkdir(parents=True)
-    interpreter = runtime / "venv/bin/python"
+    interpreter = runtime / "bin/python"
     interpreter.write_bytes(b"fake-python")
     environment = build_sanitized_worker_environment(
         runtime_python=interpreter,
@@ -115,9 +116,9 @@ def test_dinov3_apple_invocation_is_argument_list_only(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     workspace = tmp_path / "workspace"
     snapshot_root = tmp_path / "snapshot"
-    for directory in (runtime / "venv/bin", workspace, snapshot_root):
+    for directory in (runtime / "bin", workspace, snapshot_root):
         directory.mkdir(parents=True)
-    (runtime / "venv/bin/python").write_bytes(b"fake-python")
+    (runtime / "bin/python").write_bytes(b"fake-python")
     profile = load_production_runtime_profile(APPLE_RUNTIME)
     plan = build_dinov3_apple_invocation_plan(
         runtime_profile=profile,
@@ -135,6 +136,7 @@ def test_dinov3_apple_invocation_is_argument_list_only(tmp_path: Path) -> None:
     )
     assert isinstance(plan.command, tuple)
     assert plan.command[1] == "-B"
+    assert Path(plan.command[0]) == (runtime / "bin/python").resolve()
     assert plan.environment["VEA_DINOV3_EXECUTION_SELECTOR"] == profile.selector
 
 

@@ -83,7 +83,7 @@ def _binding_errors(block_name: str, *, required_member: str | None = None) -> l
         if blob is None:
             errors.append(f"{block_name}: Git blob missing for {relative}")
             continue
-        actual = hashlib.sha256(blob).hexdigest()
+        actual = hashlib.sha256(candidate.read_bytes()).hexdigest()
         if actual != expected:
             errors.append(
                 f"{block_name}: SHA-256 mismatch for {relative}: {expected} != {actual}"

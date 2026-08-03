@@ -49,11 +49,11 @@
   ],
   "identities": {
     "current_freeze_sha256": "42ded209c200cf18b422e0626083776bf1567c5151eacf0d5f895a7bcc17e109",
-    "external_snapshot_manifest_sha256": "ca8d17a601d520532319230379200c4727c9d62046e21ecb0407498019cf798a",
+    "external_snapshot_manifest_sha256": "b0ba1938e6b036eb045b5b7cb6194456d95445bc5f1d4cd7cdf958490b3d4e0e",
     "persistent_freeze_sha256": "995687ed934c0a94b52a040af048f87bc8de4e5089475f70565ad37f1f33ecd9",
     "persistent_runtime_manifest_sha256": "5276f28e4f9a7416a6a10be5a029a793052bbc06f5c71e2360b6b983ffa60de4",
     "registry_sha256": "2c75cc26a27febc633b2bad479779327f35abbf36160df2805f43a4e33f48244",
-    "runtime_profile_sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223",
+    "runtime_profile_sha256": "86069cd7396c7d254d13c63b4e5ea0cf0120a0a31f181c708945273d15825c15",
     "semantic_evidence_sha256": "8308c0ca73a3cb31fcfcc1333abe4ad904ea3e96bb45e83662281630b53e0311",
     "semantic_profile_sha256": "3824963e6d3c7d6ecb8a83c971533cdbec853d4a3b653f151c98959049411df8",
     "snapshot_profile_sha256": "df90c58f2fd603b1e7979576270e67924bd84594eb08ad337edc3fdcdd2b80ac"
@@ -146,12 +146,12 @@
     {
       "path": "scripts/dinov3_extraction_worker.py",
       "role": "isolated_worker",
-      "sha256": "d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f"
+      "sha256": "d1e9ff2b61f9feab120e464966ac106efb7373aa03be2807d402ed6f48e8a1c5"
     },
     {
       "path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py",
       "role": "extraction_boundary",
-      "sha256": "95fd65746e3c15373cf7a035ccb121307881b72db82622c870f396c7df7e15fe"
+      "sha256": "38cc3030215ed419cc90b16ee5e4562c99fe2f978276cb8e22e9e4f6b0583287"
     },
     {
       "path": "src/vision_encoder_alignment/dinov3_production_identity.py",
@@ -176,7 +176,7 @@
     {
       "path": "src/vision_encoder_alignment/extractors/dinov3.py",
       "role": "public_extractor",
-      "sha256": "dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82"
+      "sha256": "3527d5645e98c66f01c1a42b8eb1415055ba89d81bcbc5b5d087d1526449cb10"
     },
     {
       "path": "src/vision_encoder_alignment/extractors/siglip2.py",
@@ -216,12 +216,12 @@
     {
       "path": "src/vision_encoder_alignment/runtime_boundary.py",
       "role": "runtime_boundary",
-      "sha256": "3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063"
+      "sha256": "cb72edbf0f889991cac164703892a4e2d6c52b062b07ef193668da5c08f560cc"
     },
     {
       "path": "src/vision_encoder_alignment/snapshot_boundary.py",
       "role": "snapshot_boundary",
-      "sha256": "fa365b893016ab7188fe73cd3c365f7695f242356ced05f00da386180a21bd54"
+      "sha256": "2c0f81c01427063b722def129bbafe4bf9b64389e55b7fec9074072eb12d5dd7"
     }
   ],
   "profile_id": "dinov3-vitb16-r5931719-apple-cuda-fp32-v1",
@@ -235,9 +235,14 @@
     "path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json",
     "profile_id": "dinov3-apple-cuda-fp32-v1",
     "selector": "dinov3_apple_cuda_fp32_v1",
-    "sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223"
+    "sha256": "86069cd7396c7d254d13c63b4e5ea0cf0120a0a31f181c708945273d15825c15"
   },
   "schema_id": "vea.dinov3_apple_extractor_profile.v1",
+  "snapshot_layout": {
+    "layout_id": "huggingface_cache_snapshot_v1",
+    "model_id": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+    "revision": "5931719e67bbdb9737e363e781fb0c67687896bc"
+  },
   "sources": {
     "runtime_profile_path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json",
     "semantic_evidence_path": "reports/runs/VEA-P0-T007A-4-dinov3-pretrained-runtime-semantic-probe.json",

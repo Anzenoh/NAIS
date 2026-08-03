@@ -25,6 +25,7 @@ from typing import Any
 
 SNAPSHOT_PROFILE_SCHEMA_ID = "vea.model_snapshot_profile.v0"
 SNAPSHOT_MANIFEST_SCHEMA_ID = "vea.external_model_snapshot.v0"
+APPLE_HF_SNAPSHOT_LAYOUT_ID = "huggingface_cache_snapshot_v1"
 
 SNAPSHOT_ID = "dinov3-vitb16-r5931719-safetensors-v1"
 REGISTRY_KEY = "dinov3_vit_b16"
@@ -429,6 +430,15 @@ class SnapshotFileIdentity:
             "filename": self.filename,
             "sha256": self.sha256,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class AppleHFSnapshot:
+    """Validated read-only Hugging Face cache snapshot used on Apple."""
+
+    root: Path
+    files: tuple[SnapshotFileIdentity, ...]
+    source_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1132,6 +1142,102 @@ def _verify_file_identity(
         )
 
 
+def _non_link_directory_chain(root: Path, candidate: Path, context: str) -> None:
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError:
+        _fail("unsafe_path", context, "path escapes the approved cache root")
+    current = root
+    for part in relative.parts:
+        current = current / part
+        if _is_reparse_point(current):
+            _fail("unsafe_path", context, "directory links and reparse points are forbidden")
+        if not current.is_dir():
+            _fail("snapshot_layout_mismatch", context, "required directory is missing")
+
+
+def resolve_apple_hf_snapshot_root(
+    cache_root: str | Path,
+    *,
+    model_id: str,
+    revision: str,
+) -> Path:
+    """Resolve the exact non-link Hugging Face cache snapshot directory."""
+
+    if model_id != MODEL_ID or revision != REVISION:
+        _fail("snapshot_identity_mismatch", "snapshot", "model or revision mismatch")
+    cache = _resolved_directory(cache_root, "cache_root")
+    snapshot = cache / ("models--" + model_id.replace("/", "--")) / "snapshots" / revision
+    _non_link_directory_chain(cache, snapshot, "snapshot_root")
+    return snapshot.resolve(strict=True)
+
+
+def validate_apple_hf_snapshot(
+    snapshot_root: str | Path,
+    *,
+    cache_root: str | Path,
+    model_id: str,
+    revision: str,
+    files: Sequence[SnapshotFileIdentity | Mapping[str, Any]],
+) -> AppleHFSnapshot:
+    """Validate exact Apple Hugging Face-cache bytes without writes or network."""
+
+    expected_root = resolve_apple_hf_snapshot_root(
+        cache_root, model_id=model_id, revision=revision
+    )
+    candidate = Path(snapshot_root)
+    if not candidate.is_absolute() or _is_reparse_point(candidate):
+        _fail("unsafe_path", "snapshot_root", "expected an absolute non-link directory")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise SnapshotBoundaryError(
+            "path_validation_failed", "snapshot_root: directory does not exist"
+        ) from exc
+    if resolved != expected_root:
+        _fail("snapshot_identity_mismatch", "snapshot_root", "unexpected cache layout")
+    identities = tuple(
+        item
+        if isinstance(item, SnapshotFileIdentity)
+        else SnapshotFileIdentity.from_dict(item, f"files[{index}]")
+        for index, item in enumerate(files)
+    )
+    if not identities or len({item.filename for item in identities}) != len(identities):
+        _fail("snapshot_identity_mismatch", "files", "file inventory is empty or duplicated")
+    cache = _resolved_directory(cache_root, "cache_root")
+    for identity in identities:
+        leaf = resolved / identity.filename
+        if not leaf.exists():
+            _fail("snapshot_integrity_failed", identity.filename, "required file is missing")
+        if leaf.is_symlink():
+            try:
+                target = leaf.resolve(strict=True)
+            except OSError as exc:
+                raise SnapshotBoundaryError(
+                    "snapshot_integrity_failed", f"{identity.filename}: broken link"
+                ) from exc
+            if not _contains(cache, target) or not target.is_file():
+                _fail("unsafe_path", identity.filename, "leaf link escapes approved cache")
+            _non_link_directory_chain(cache, target.parent, identity.filename)
+            verified = target
+        else:
+            if _is_reparse_point(leaf) or not leaf.is_file():
+                _fail("unsafe_path", identity.filename, "expected a regular file")
+            verified = leaf
+        _verify_file_identity(verified, identity, identity.filename)
+    identity_document = {
+        "files": [item.to_dict() for item in identities],
+        "layout": APPLE_HF_SNAPSHOT_LAYOUT_ID,
+        "model_id": model_id,
+        "revision": revision,
+    }
+    return AppleHFSnapshot(
+        root=resolved,
+        files=identities,
+        source_sha256=hashlib.sha256(canonical_json_bytes(identity_document)).hexdigest(),
+    )
+
+
 def snapshot_files_directory(snapshot_root: str | Path) -> Path:
     """Return an existing, non-link ``files`` directory without modifying it."""
 
@@ -1226,6 +1332,8 @@ def validate_snapshot_root(
 
 
 __all__ = [
+    "APPLE_HF_SNAPSHOT_LAYOUT_ID",
+    "AppleHFSnapshot",
     "ACCESS_CLASSIFICATION",
     "CONFIG_CLASS",
     "EXPECTED_PARAMETER_COUNT",
@@ -1250,8 +1358,10 @@ __all__ = [
     "load_snapshot_manifest",
     "load_snapshot_profile",
     "resolve_default_snapshot_root",
+    "resolve_apple_hf_snapshot_root",
     "sha256_file",
     "snapshot_files_directory",
     "validate_snapshot_manifest",
     "validate_snapshot_root",
+    "validate_apple_hf_snapshot",
 ]

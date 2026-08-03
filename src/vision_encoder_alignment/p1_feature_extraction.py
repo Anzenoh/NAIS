@@ -53,7 +53,7 @@ RUN_ID_RE = re.compile(
     r"^[0-9]{8}T[0-9]{6}Z_p1_1000_three_encoder_[0-9a-f]{7,12}$"
 )
 RUN_ID_PATTERN = r"^[0-9]{8}T[0-9]{6}Z_p1_1000_three_encoder_[0-9a-f]{7,12}$"
-REPOSITORY_HEAD = "e518a51ba83f70b42611cc4386a9f55dc9e97de3"
+PRODUCTION_SOURCE_BASELINE = "e518a51ba83f70b42611cc4386a9f55dc9e97de3"
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 SENSITIVE_RE = re.compile(r"(?:token|secret|password|credential|api[_-]?key)", re.I)
@@ -238,9 +238,9 @@ EXPECTED_GEOMETRY = {
 }
 EXPECTED_RUNTIME = {
     "dinov3": {
-        "extractor_profile": {"path": "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json", "sha256": "7b83fd74033f359a5a7b4e7d052b8d1bd106c658355ae86499947d151b0176a9"},
+        "extractor_profile": {"path": "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json", "sha256": "dcc0a54d1227519881cf256bc7fc12fff6b9b346ceb64b4b2cd485d49e67f262"},
         "interpreter": "/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python3",
-        "profile": {"path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json", "profile_id": "dinov3-apple-cuda-fp32-v1", "sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223"},
+        "profile": {"path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json", "profile_id": "dinov3-apple-cuda-fp32-v1", "sha256": "86069cd7396c7d254d13c63b4e5ea0cf0120a0a31f181c708945273d15825c15"},
     },
     "main": {
         "interpreter": "/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3",
@@ -248,12 +248,12 @@ EXPECTED_RUNTIME = {
     },
 }
 EXPECTED_SOURCE_BINDINGS = (
-    {"path": "scripts/dinov3_extraction_worker.py", "sha256": "d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f"},
-    {"path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py", "sha256": "95fd65746e3c15373cf7a035ccb121307881b72db82622c870f396c7df7e15fe"},
+    {"path": "scripts/dinov3_extraction_worker.py", "sha256": "d1e9ff2b61f9feab120e464966ac106efb7373aa03be2807d402ed6f48e8a1c5"},
+    {"path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py", "sha256": "38cc3030215ed419cc90b16ee5e4562c99fe2f978276cb8e22e9e4f6b0583287"},
     {"path": "src/vision_encoder_alignment/extractors/clip.py", "sha256": "0ec0980c9761a73597244b03116de093c71b568cc0d8755951821b4f448eb82d"},
-    {"path": "src/vision_encoder_alignment/extractors/dinov3.py", "sha256": "dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82"},
+    {"path": "src/vision_encoder_alignment/extractors/dinov3.py", "sha256": "3527d5645e98c66f01c1a42b8eb1415055ba89d81bcbc5b5d087d1526449cb10"},
     {"path": "src/vision_encoder_alignment/extractors/siglip2.py", "sha256": "0267d9eaa51d6c6b686339d9d9e700f782d2ec3b5c16c20d3df16e8fa17cfd5e"},
-    {"path": "src/vision_encoder_alignment/runtime_boundary.py", "sha256": "3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063"},
+    {"path": "src/vision_encoder_alignment/runtime_boundary.py", "sha256": "cb72edbf0f889991cac164703892a4e2d6c52b062b07ef193668da5c08f560cc"},
 )
 
 
@@ -449,6 +449,24 @@ def lane_command_plan(profile: ExtractionProfile, repository_root: str | Path) -
     )
 
 
+def _approved_repository_commit(repository_root: str | Path | None = None) -> str:
+    approved = os.environ.get("VEA_APPROVED_REPO_COMMIT", "").lower()
+    if REVISION_RE.fullmatch(approved) is None:
+        _fail("VEA_APPROVED_REPO_COMMIT is missing or noncanonical")
+    if repository_root is not None:
+        result = subprocess.run(
+            ["git", "-C", str(Path(repository_root).resolve()), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            shell=False,
+        )
+        actual = result.stdout.strip().lower()
+        if result.returncode != 0 or actual != approved:
+            _fail("approved repository commit does not match HEAD")
+    return approved
+
+
 def offline_environment(repository_root: str | Path) -> dict[str, str]:
     return {
         "CUDA_VISIBLE_DEVICES": "0", "HF_DATASETS_OFFLINE": "1",
@@ -456,6 +474,7 @@ def offline_environment(repository_root: str | Path) -> dict[str, str]:
         "PIP_NO_INDEX": "1", "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": str(Path(repository_root).resolve() / "src"),
         "TRANSFORMERS_OFFLINE": "1",
+        "VEA_APPROVED_REPO_COMMIT": _approved_repository_commit(repository_root),
     }
 
 
@@ -715,18 +734,22 @@ def validate_shard(sidecar_path: str | Path, *, expected: ShardPlan, model: Mapp
     return value
 
 
-def initial_run_state(profile: ExtractionProfile, *, run_id: str, mode: str, batch_size: int, image_ids: Sequence[str]) -> dict[str, Any]:
+def initial_run_state(profile: ExtractionProfile, *, run_id: str, mode: str, batch_size: int, image_ids: Sequence[str], repository_head: str | None = None) -> dict[str, Any]:
     if RUN_ID_RE.fullmatch(run_id) is None:
         _fail("run ID is noncanonical")
     count = validate_mode(profile, mode, batch_size)
     if len(image_ids) != count:
         _fail(f"{mode} mode requires exactly {count} ordered images")
-    plan = extraction_plan_document(profile, run_id=run_id, mode=mode, batch_size=batch_size, image_ids=image_ids)
-    environment = environment_document(profile)
+    head = _approved_repository_commit() if repository_head is None else repository_head
+    if REVISION_RE.fullmatch(head) is None:
+        _fail("repository head is noncanonical")
+    plan = extraction_plan_document(profile, run_id=run_id, mode=mode, batch_size=batch_size, image_ids=image_ids, repository_head=head)
+    environment = environment_document(profile, repository_head=head)
     return {
         "batch_size": batch_size, "image_ids": list(image_ids), "mode": mode,
         "model_order": list(MODEL_ORDER), "profile_sha256": profile.source_sha256,
-        "repository_head": REPOSITORY_HEAD,
+        "production_source_baseline": PRODUCTION_SOURCE_BASELINE,
+        "repository_head": head,
         "immutable_artifacts": {
             "dataset_manifest.snapshot.jsonl": profile.document["dataset"]["manifest"]["sha256"],
             "environment.json": hashlib.sha256(canonical_json_bytes(environment)).hexdigest(),
@@ -737,7 +760,8 @@ def initial_run_state(profile: ExtractionProfile, *, run_id: str, mode: str, bat
     }
 
 
-def environment_document(profile: ExtractionProfile) -> dict[str, Any]:
+def environment_document(profile: ExtractionProfile, *, repository_head: str | None = None) -> dict[str, Any]:
+    head = _approved_repository_commit() if repository_head is None else repository_head
     return {
         "cuda_visible_devices": "0",
         "network_allowed": False,
@@ -751,15 +775,17 @@ def environment_document(profile: ExtractionProfile) -> dict[str, Any]:
             "primary_lane": profile.document["runtime"]["main"]["interpreter"],
         },
         "ready_for_p1_extraction": False,
-        "repository_head": REPOSITORY_HEAD,
+        "production_source_baseline": PRODUCTION_SOURCE_BASELINE,
+        "repository_head": head,
         "schema_id": ENVIRONMENT_SCHEMA_ID,
     }
 
 
 def extraction_plan_document(
     profile: ExtractionProfile, *, run_id: str, mode: str,
-    batch_size: int, image_ids: Sequence[str],
+    batch_size: int, image_ids: Sequence[str], repository_head: str | None = None,
 ) -> dict[str, Any]:
+    head = _approved_repository_commit() if repository_head is None else repository_head
     count = validate_mode(profile, mode, batch_size)
     ids = tuple(image_ids)
     if len(ids) != count or len(set(ids)) != count:
@@ -772,7 +798,8 @@ def extraction_plan_document(
         "models": [dict(model) for model in profile.models],
         "profile_sha256": profile.source_sha256,
         "ready_for_p1_extraction": False,
-        "repository_head": REPOSITORY_HEAD,
+        "production_source_baseline": PRODUCTION_SOURCE_BASELINE,
+        "repository_head": head,
         "run_id": run_id,
         "schema_id": PLAN_SCHEMA_ID,
         "selected_image_ids": list(ids),
@@ -798,25 +825,27 @@ def initialize_run_artifacts(
     repository = validate_non_link_path(
         repository_root, expected_kind="directory", label="repository root",
     )
+    repository_head = _approved_repository_commit(repository)
     manifest_relative = profile.document["dataset"]["manifest"]["path"]
     manifest_path = repository.joinpath(*manifest_relative.split("/"))
     raw_manifest = manifest_path.read_bytes()
     if hashlib.sha256(raw_manifest).hexdigest() != profile.document["dataset"]["manifest"]["sha256"]:
         _fail("dataset manifest snapshot identity mismatch")
-    state = initial_run_state(profile, run_id=run_id, mode=mode, batch_size=batch_size, image_ids=image_ids)
+    state = initial_run_state(profile, run_id=run_id, mode=mode, batch_size=batch_size, image_ids=image_ids, repository_head=repository_head)
     atomic_write(root / "dataset_manifest.snapshot.jsonl", raw_manifest)
-    atomic_write_json(root / "environment.json", environment_document(profile))
-    atomic_write_json(root / "extraction_plan.json", extraction_plan_document(profile, run_id=run_id, mode=mode, batch_size=batch_size, image_ids=image_ids))
+    atomic_write_json(root / "environment.json", environment_document(profile, repository_head=repository_head))
+    atomic_write_json(root / "extraction_plan.json", extraction_plan_document(profile, run_id=run_id, mode=mode, batch_size=batch_size, image_ids=image_ids, repository_head=repository_head))
     atomic_write_json(root / "run_state.json", state)
     return state
 
 
 def _validate_control_artifacts(root: Path, state: Mapping[str, Any], profile: ExtractionProfile) -> None:
-    if state.get("profile_sha256") != profile.source_sha256 or state.get("repository_head") != REPOSITORY_HEAD:
+    repository_head = state.get("repository_head")
+    if state.get("profile_sha256") != profile.source_sha256 or not isinstance(repository_head, str) or REVISION_RE.fullmatch(repository_head) is None:
         _fail("run control identity mismatch", EXIT_ARTIFACT)
     expected_state = initial_run_state(
         profile, run_id=str(state.get("run_id")), mode=str(state.get("mode")),
-        batch_size=state.get("batch_size"), image_ids=state.get("image_ids", ()),
+        batch_size=state.get("batch_size"), image_ids=state.get("image_ids", ()), repository_head=repository_head,
     )
     if dict(state) != expected_state:
         _fail("run state fields or values mismatch", EXIT_ARTIFACT)
@@ -825,10 +854,10 @@ def _validate_control_artifacts(root: Path, state: Mapping[str, Any], profile: E
         _fail("run immutable-artifact identity missing", EXIT_ARTIFACT)
     expected_plan = extraction_plan_document(
         profile, run_id=str(state["run_id"]), mode=str(state["mode"]),
-        batch_size=state["batch_size"], image_ids=state["image_ids"],
+        batch_size=state["batch_size"], image_ids=state["image_ids"], repository_head=repository_head,
     )
     expected_json = {
-        "environment.json": environment_document(profile),
+        "environment.json": environment_document(profile, repository_head=repository_head),
         "extraction_plan.json": expected_plan,
     }
     for name, document in expected_json.items():

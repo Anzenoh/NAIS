@@ -25,7 +25,7 @@ umask 077
 
 : "${VEA_DATASET_ROOT:?set VEA_DATASET_ROOT to the Apple COCO val2017 root}"
 : "${VEA_CHECKPOINT_CACHE:?set VEA_CHECKPOINT_CACHE to the Apple checkpoint cache root}"
-: "${VEA_T003B_EVIDENCE_ROOT:?set VEA_T003B_EVIDENCE_ROOT to a fresh evidence root}"
+: "${VEA_T003B_EVIDENCE_ROOT:?set VEA_T003B_EVIDENCE_ROOT to a fresh Stage A evidence root for the accepted commit}"
 : "${VEA_R1R3_TASK_SHA256:?set from the independently accepted R1R3 package identity}"
 : "${VEA_R1R3_REPORT_SHA256:?set from the independently accepted R1R3 package identity}"
 : "${VEA_APPROVED_REPO_COMMIT:?set to the independently approved exact repository commit}"
@@ -105,17 +105,17 @@ printf '%s  %s\n' "$VEA_R1R3_REPORT_SHA256" "$R1R3_REPORT" | sha256sum --check -
 grep -F 'VEA-P1-T002D-SBR1 = ACCEPTED_PASS' "$R1R3_TASK" >/dev/null
 
 assert_nonlink_existing "$PROFILE" file
-printf '%s  %s\n' a0ef8cfe3bf8e6aed95c2ce2fcc32c6d90cfb169e8593ecc1954862afe96563f "$PROFILE" | sha256sum --check --strict
+printf '%s  %s\n' 61a3005606ff93ec5dd74b0895f3cb3d2644845a239f97c80fdcb6544b5e292a "$PROFILE" | sha256sum --check --strict
 while read -r expected relative; do
   assert_nonlink_existing "$REPO_ROOT/$relative" file
   printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
 done <<'SOURCE_BINDINGS'
-d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f scripts/dinov3_extraction_worker.py
-95fd65746e3c15373cf7a035ccb121307881b72db82622c870f396c7df7e15fe src/vision_encoder_alignment/dinov3_extraction_boundary.py
+d1e9ff2b61f9feab120e464966ac106efb7373aa03be2807d402ed6f48e8a1c5 scripts/dinov3_extraction_worker.py
+38cc3030215ed419cc90b16ee5e4562c99fe2f978276cb8e22e9e4f6b0583287 src/vision_encoder_alignment/dinov3_extraction_boundary.py
 0ec0980c9761a73597244b03116de093c71b568cc0d8755951821b4f448eb82d src/vision_encoder_alignment/extractors/clip.py
-dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82 src/vision_encoder_alignment/extractors/dinov3.py
+3527d5645e98c66f01c1a42b8eb1415055ba89d81bcbc5b5d087d1526449cb10 src/vision_encoder_alignment/extractors/dinov3.py
 0267d9eaa51d6c6b686339d9d9e700f782d2ec3b5c16c20d3df16e8fa17cfd5e src/vision_encoder_alignment/extractors/siglip2.py
-3233ed503581af6f9e9fb54993e85783546a0ef251b02dbe943faec6724b0063 src/vision_encoder_alignment/runtime_boundary.py
+cb72edbf0f889991cac164703892a4e2d6c52b062b07ef193668da5c08f560cc src/vision_encoder_alignment/runtime_boundary.py
 SOURCE_BINDINGS
 
 # Verify the exact Stage A implementation before creating any evidence root.
@@ -123,8 +123,8 @@ while read -r expected relative; do
   assert_nonlink_existing "$REPO_ROOT/$relative" file
   printf '%s  %s\n' "$expected" "$REPO_ROOT/$relative" | sha256sum --check --strict
 done <<'STAGE_A_IMPLEMENTATION'
-95a5f9de7d9d1cd964417d478b3047ec1ff62f578e5c18fbab2176f954ee01d2 scripts/extract_features.py
-2a031c401289e408f18c31d58c3d2da473801bb871b286cf911f8f347cb6a3d4 src/vision_encoder_alignment/p1_feature_extraction.py
+6336c87682442d66a49bed71352f831a0ba9fb2f513e933fd28d38ff4270c694 scripts/extract_features.py
+b06147d7d954b38291d3b56af5b3aa866279564482e802a37f67b024c18f7fdd src/vision_encoder_alignment/p1_feature_extraction.py
 dcd5dce50b9e5e2e4ac7c505efac751e9f621fd1a780495484fb02758873a13e src/vision_encoder_alignment/p1_runtime_preflight.py
 1e3d5b9b95315a61af436f61f32b1fb184fb2c9d3e0b53118437d3c8b3ecabd5 scripts/inventory_p1_checkpoint_cache.py
 7a0e8cfb54798d857ddccdf6d8288d13f8587d3ff257be56c1ef49c8db1ba4f0 scripts/validate_p1_feature_extraction.py
@@ -193,8 +193,10 @@ not smoke approval.
 
 ## 4. Stage B — separately approved 10-image smoke
 
-Continue only after explicit independent approval of all Stage A evidence. Use one fresh
-canonical ID. The smoke is the first 10 ordered images, batch size 1, sequential
+Continue only after explicit independent approval of all Stage A evidence. The evidence
+must be fresh and from this accepted commit. Never reuse an earlier evidence root, failed
+run, or partial output.
+Use one fresh canonical ID. The smoke is the first 10 ordered images, batch size 1, sequential
 CLIP/SigLIP2/DINOv3 lanes, and FP32 only.
 
 ```bash
@@ -204,11 +206,21 @@ case "$RUN_ID" in ????????T??????Z_p1_1000_three_encoder_[0-9a-f]*) ;; *) exit 2
 test ! -e "$OUTPUT_PARENT/$RUN_ID"
 test ! -L "$OUTPUT_PARENT/$RUN_ID"
 
+exec 3>&1
+if test -w /dev/tty; then exec 4>/dev/tty || exec 4>&3; else exec 4>&3; fi
+set +e
 "$MAIN_PYTHON" -B "$REPO_ROOT/scripts/extract_features.py" run \
   --profile "$PROFILE" --repository-root "$REPO_ROOT" \
   --dataset-root "$DATASET_ROOT" --cache-root "$CACHE_ROOT" \
   --output-parent "$OUTPUT_PARENT" --run-id "$RUN_ID" \
   --mode smoke --batch-size 1 > "$EVIDENCE_ROOT/10-smoke-run.json"
+SMOKE_EXIT=$?
+set -e
+if test "$SMOKE_EXIT" -eq 0; then SMOKE_STATUS=complete; else SMOKE_STATUS=failed; fi
+printf 'final_status=%s\n' "$SMOKE_STATUS" >&4
+printf 'exit_code=%s\n' "$SMOKE_EXIT" >&4
+printf 'report_path=%s\n' "$EVIDENCE_ROOT/10-smoke-run.json" >&4
+test "$SMOKE_EXIT" -eq 0 || exit "$SMOKE_EXIT"
 
 "$MAIN_PYTHON" -B "$REPO_ROOT/scripts/validate_p1_feature_extraction.py" \
   --profile "$PROFILE" --run-root "$OUTPUT_PARENT/$RUN_ID" \

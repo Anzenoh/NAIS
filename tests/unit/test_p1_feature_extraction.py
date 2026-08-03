@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
 from types import SimpleNamespace
 from pathlib import Path
 
@@ -51,6 +52,11 @@ RUN_ID = "20260730T120000Z_p1_1000_three_encoder_e518a51"
 
 @pytest.fixture(autouse=True)
 def _supported_no_clobber_link(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    head = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True, shell=False,
+    ).stdout.strip()
+    monkeypatch.setenv("VEA_APPROVED_REPO_COMMIT", head)
     """Emulate link(2) only when the external Windows test filesystem lacks it."""
     probe_source = tmp_path / ".link-source"
     probe_target = tmp_path / ".link-target"

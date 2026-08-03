@@ -146,6 +146,43 @@ def _snapshot(cache_root: Path, model_id: str, revision: str) -> Path:
     return cache_root / ("models--" + model_id.replace("/", "--")) / "snapshots" / revision
 
 
+def _validate_dinov3_contract(profile: Any, repository: Path, cache_root: Path) -> None:
+    from vision_encoder_alignment.dinov3_extraction_boundary import (
+        DINOV3_SELECTOR,
+        load_dinov3_extractor_profile,
+    )
+    from vision_encoder_alignment.production_runtime_contract import (
+        load_production_runtime_profile,
+        validate_profile_source_bindings,
+    )
+    from vision_encoder_alignment.runtime_boundary import runtime_python_path
+    from vision_encoder_alignment.snapshot_boundary import validate_apple_hf_snapshot
+
+    lane = profile.document["runtime"]["dinov3"]
+    extractor_profile = load_dinov3_extractor_profile(
+        repository / lane["extractor_profile"]["path"],
+        execution_selector=DINOV3_SELECTOR,
+    )
+    runtime_profile = load_production_runtime_profile(repository / lane["profile"]["path"])
+    validate_profile_source_bindings(runtime_profile, repository)
+    configured = Path(lane["interpreter"])
+    expected = runtime_python_path(
+        runtime_profile.runtime_root,
+        interpreter_layout=runtime_profile.interpreter_layout,
+    )
+    if configured != expected and configured != expected.with_name("python3"):
+        raise FeatureExtractionError("DINOv3 interpreter contract mismatch", 4)
+    model = next(item for item in profile.models if item["registry_key"] == MODEL_ORDER[2])
+    snapshot = _snapshot(cache_root, model["model_id"], model["revision"])
+    validate_apple_hf_snapshot(
+        snapshot,
+        cache_root=cache_root,
+        model_id=model["model_id"],
+        revision=model["revision"],
+        files=extractor_profile.checkpoint_files,
+    )
+
+
 def _validate_dataset(rows: Sequence[Any], dataset_root: Path) -> None:
     from PIL import Image
     root = validate_non_link_path(
@@ -180,6 +217,7 @@ def _preflight(
     interpreter_is_file: Callable[[Path], bool] | None = None,
     host_name: Callable[[], str] = platform.node,
     gpu_runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    dinov3_validator: Callable[[Any, Path, Path], None] = _validate_dinov3_contract,
 ) -> dict[str, Any]:
     repository = validate_non_link_path(
         repository, expected_kind="directory", label="repository root",
@@ -209,6 +247,7 @@ def _preflight(
             ) from exc
         if not files:
             raise FeatureExtractionError(f"checkpoint snapshot unavailable: {model['registry_key']}", 4)
+    dinov3_validator(profile, repository, cache)
     runtime = profile.document["runtime"]
     for lane in (runtime["main"], runtime["dinov3"]):
         interpreter = Path(lane["interpreter"])
@@ -232,6 +271,13 @@ def _preflight(
     return {
         "classification": "P1_FEATURE_EXTRACTION_PREFLIGHT_VALID",
         "dataset_image_count": 1000, "model_count": 3,
+        "operation_counts": {
+            "cache_write": 0,
+            "credential_read": 0,
+            "model_load": 0,
+            "network": 0,
+            "package": 0,
+        },
         "ready_for_p1_extraction": False, "ready_for_smoke_execution": True,
         "schema_id": "vea.p1.feature_extraction_preflight.v0",
     }
@@ -439,6 +485,13 @@ def _record_failure_without_masking(
             )
 
 
+def _progress_marker(event: str, model: str, classification: str, *, exit_code: int | None = None) -> None:
+    marker = f"{event} model={model} classification={classification}"
+    if exit_code is not None:
+        marker += f" exit_code={exit_code}"
+    print(marker, file=sys.stderr, flush=True)
+
+
 def _run_or_resume(args: argparse.Namespace, *, resume: bool) -> int:
     profile = load_extraction_profile(args.profile)
     repository = validate_non_link_path(
@@ -508,6 +561,7 @@ def _run_or_resume(args: argparse.Namespace, *, resume: bool) -> int:
                    "--dataset-root", str(dataset_root), "--cache-root", str(cache_root),
                    "--run-root", str(run_root), "--model", model, "--mode", args.mode,
                    "--batch-size", str(args.batch_size), "--start-shard", str(progress[model])]
+        _progress_marker("model_start", model, "execution_started")
         try:
             result = run_command(command, env)
         except OSError as exc:
@@ -518,6 +572,7 @@ def _run_or_resume(args: argparse.Namespace, *, resume: bool) -> int:
                 exception_class="WorkerLaunchError",
                 sanitized_message="worker_launch_failed", original=failure,
             )
+            _progress_marker("model_failure", model, "worker_launch_failed", exit_code=EXIT_EXECUTION)
             raise failure from exc
         if result.returncode != 0:
             failure = FeatureExtractionError(f"{model} worker failed", EXIT_EXECUTION)
@@ -530,6 +585,7 @@ def _run_or_resume(args: argparse.Namespace, *, resume: bool) -> int:
                 ),
                 original=failure,
             )
+            _progress_marker("model_failure", model, "worker_process_failed", exit_code=EXIT_EXECUTION)
             raise failure
         try:
             observed = reconcile_resume(run_root, state, profile)
@@ -547,7 +603,9 @@ def _run_or_resume(args: argparse.Namespace, *, resume: bool) -> int:
                 sanitized_message="worker_artifact_reconciliation_failed",
                 original=failure,
             )
+            _progress_marker("model_failure", model, "worker_artifact_reconciliation_failed", exit_code=EXIT_EXECUTION)
             raise failure from exc
+        _progress_marker("model_complete", model, "execution_complete", exit_code=EXIT_SUCCESS)
     try:
         candidate = complete_run(run_root, profile, publish_manifest=False)
     except FeatureExtractionError as exc:
