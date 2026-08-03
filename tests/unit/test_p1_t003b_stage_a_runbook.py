@@ -172,3 +172,53 @@ def test_stage_b_is_separately_approved_derived_and_never_full_extraction() -> N
     assert 'APPROVED_COMMIT_PREFIX=${VEA_APPROVED_REPO_COMMIT:0:7}' in commands
     assert "three_encoder_${APPROVED_COMMIT_PREFIX}" in commands
     assert all("--mode full" not in block for block in _bash_blocks(text))
+
+
+def test_repository_root_is_required_clean_and_checked_before_evidence_creation() -> None:
+    text = RUNBOOK.read_text(encoding="utf-8")
+    setup = _section(text, "## 1.", "## 2.")
+    checks = _section(text, "## 2.", "## 3.")
+    setup_commands = "\n".join(_bash_blocks(setup))
+    check_commands = "\n".join(_bash_blocks(checks))
+    errors: list[str] = []
+    required_gate = (
+        ': "${VEA_REPO_ROOT:?set VEA_REPO_ROOT to the canonical clean Apple '
+        'repository root}"'
+    )
+    if required_gate not in setup_commands:
+        errors.append("missing required VEA_REPO_ROOT environment gate")
+    assignments = re.findall(r'^REPO_ROOT=.*$', setup_commands, flags=re.MULTILINE)
+    if assignments != ['REPO_ROOT="$VEA_REPO_ROOT"']:
+        errors.append(f"REPO_ROOT assignment must be exact, found {assignments!r}")
+    executable = "\n".join(_bash_blocks(text))
+    if "REPO_ROOT=/home/chltjsdh/vea/repo" in executable:
+        errors.append("fixed Apple REPO_ROOT assignment remains")
+    fallbacks = (
+        "VEA_REPO_ROOT:-",
+        "VEA_REPO_ROOT:=",
+        "VEA_REPO_ROOT-",
+        "${VEA_REPO_ROOT+",
+    )
+    for fallback in fallbacks:
+        if fallback in executable:
+            errors.append(f"repository-root fallback remains: {fallback}")
+    mkdir = 'mkdir -m 700 -- "$EVIDENCE_ROOT"'
+    root_check = 'assert_nonlink_existing "$REPO_ROOT" directory'
+    required_following_checks = (
+        'test "$(git rev-parse HEAD)" = "$VEA_APPROVED_REPO_COMMIT"',
+        'git diff --cached --name-only',
+        'git diff --name-only',
+        'git ls-files --others --exclude-standard',
+        'git -c core.whitespace=cr-at-eol diff --check',
+    )
+    if root_check not in check_commands:
+        errors.append("selected repository root is not checked as a directory")
+    elif mkdir not in check_commands or check_commands.index(root_check) >= check_commands.index(mkdir):
+        errors.append("selected repository root check does not precede evidence mkdir")
+    selected_at = text.index('REPO_ROOT="$VEA_REPO_ROOT"')
+    for command in required_following_checks:
+        if command not in check_commands:
+            errors.append(f"missing post-root contract command: {command}")
+        elif text.index(command) <= selected_at:
+            errors.append(f"post-root contract command occurs before REPO_ROOT: {command}")
+    assert not errors, "\n".join(errors)

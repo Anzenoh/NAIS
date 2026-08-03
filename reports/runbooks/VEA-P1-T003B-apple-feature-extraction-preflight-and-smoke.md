@@ -29,8 +29,9 @@ umask 077
 : "${VEA_R1R3_TASK_SHA256:?set from the independently accepted R1R3 package identity}"
 : "${VEA_R1R3_REPORT_SHA256:?set from the independently accepted R1R3 package identity}"
 : "${VEA_APPROVED_REPO_COMMIT:?set to the independently approved exact repository commit}"
+: "${VEA_REPO_ROOT:?set VEA_REPO_ROOT to the canonical clean Apple repository root}"
 
-REPO_ROOT=/home/chltjsdh/vea/repo
+REPO_ROOT="$VEA_REPO_ROOT"
 DATASET_ROOT="$VEA_DATASET_ROOT"
 CACHE_ROOT="$VEA_CHECKPOINT_CACHE"
 EVIDENCE_ROOT="$VEA_T003B_EVIDENCE_ROOT"
