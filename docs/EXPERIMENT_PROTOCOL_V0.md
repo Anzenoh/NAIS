@@ -139,3 +139,7 @@ Pass only when:
 - no NaN or Inf exists.
 
 The gate does not require similarity to be high.
+
+### Gate P1 analysis (T004--T007)
+
+Pass software execution only when the frozen campaign identity, input checksums, split, code tree, fitted-parameter manifest, one logical test unseal, deterministic package, and ending input checksums all verify. T004--T006 and extension selection use train/validation only. T007 reads only predeclared frozen test endpoints. A low CKA, negative R2, weak retrieval result, rejected hypothesis, or Windows-local same-setting repeat status `NOT_EXECUTED_LOCAL_RESOURCE_UNAVAILABLE` is a scientific outcome, not a technical failure. Checksum identity is never reported as a repeat.

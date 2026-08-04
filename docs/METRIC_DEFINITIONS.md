@@ -114,3 +114,11 @@ No universal thresholds such as “CKA ≥ 0.7 is high” are approved in v0. In
 - held-out mapping performance.
 
 Any later threshold must be introduced through `docs/DECISION_LOG.md` with empirical justification.
+
+## 9. Frozen Phase 1 campaign additions
+
+- Primary global similarity is centered linear CKA with image-permutation calibration; `CKA_u`, cosine-distance RSA, covariance spectrum, effective rank, anisotropy, and kNN overlap are sensitivity or descriptive measures.
+- Directional alignment reports macro R2 and NMSE against the train-target mean, cosine summaries, Recall@1/5/10, per-image error, and image-block confidence intervals. Ridge alpha and reduced rank use the validation one-standard-error rule with the least-complex deterministic tie-break.
+- Patch states are raw `X`, within-image centered `W`, and train-template double-centered `D = X - G_image - P_train + mu_train`. Spatial resampling units are whole images.
+- The authorized extension is linear only: exact-node direct and composed maps, closed cycles, reduced-rank maps, symmetric regularized MAXVAR GCCA, shared/private reconstruction, and a nested validation learning curve.
+- Undefined zero-variance or zero-norm endpoints are explicitly `INDETERMINATE`; no silent epsilon, solver, endpoint, or layer substitution is allowed.

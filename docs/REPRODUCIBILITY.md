@@ -80,3 +80,12 @@ Seeds do not replace deterministic validation. Record observed nondeterminism fo
 - use checksums for shards;
 - do not use pickle as the canonical interchange format;
 - incomplete runs must be marked and must not be consumed by default analysis commands.
+
+## 8. Sealed Phase 1 analysis
+
+- The result identity is derived from the accepted input run ID, full analysis commit, and canonical config SHA-256.
+- Set `PYTHONHASHSEED=0` and all declared NumPy/BLAS thread variables before importing NumPy. The campaign uses explicit FP64 accumulation over FP32 source features and fixed PCG64 label-derived seeds.
+- Resume requires unchanged code, config, input, prior-stage inventories, and fitted bytes. Completed stages are no-clobber.
+- Exactly one logical test-unseal event is allowed. After it, reselection, refit, config mutation, code mutation, and non-test value reads are rejected.
+- The deterministic archive fixes ordering, paths, modes, ownership fields, timestamps, compression, JSON, and newlines. Its outer SHA-256 stays outside the archive.
+- Windows-local repeat status is `NOT_EXECUTED_LOCAL_RESOURCE_UNAVAILABLE`; starting/ending 252-file equality is preservation evidence only.

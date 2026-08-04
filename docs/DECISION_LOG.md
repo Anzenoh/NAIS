@@ -14,6 +14,10 @@
 | VEA-D008 | Pin exact checkpoint revisions before full runs | Prevents silent model drift | Accepted |
 | VEA-D009 | Use safe tensor shards with JSON manifests as the canonical generated feature format | Provides portable, non-pickle tensor storage and explicit image ordering | Accepted |
 | VEA-D010 | Keep tested logic in a Python package; notebooks are visualization clients only | Improves reproducibility and testability | Accepted |
+| VEA-D011 | Freeze a canonical T004--T007 train/validation/test campaign with exactly one logical test unseal | Prevents test-driven layer, rank, endpoint, or conclusion changes | Accepted |
+| VEA-D012 | Authorize only the declared linear canonical extension; exclude MLP, cross-attention, projectors, and language models | Keeps Phase 1 encoder-only and makes the hypothesis boundary auditable | Accepted |
+| VEA-D013 | Record Windows-local repeat unavailability separately from checksum preservation | Prevents integrity checks from being misrepresented as repeat evidence | Accepted |
+| VEA-D014 | Seal results with a non-self-referential internal manifest and external archive checksum | Makes scientific payload bytes deterministic and independently verifiable | Accepted |
 
 ## Open decisions
 
@@ -23,7 +27,7 @@
 | VEA-O002 | Smoke image dataset root and immutable ten-image manifest | First real-checkpoint smoke |
 | VEA-O003 | 1,000-image selection policy and manifest | Phase 1 extraction |
 | VEA-O004 | Bulk CUDA host and batch size | Phase 1 extraction |
-| VEA-O005 | Empirical similarity interpretation bands | Final Phase 1 analysis, after null and repeat distributions |
+| VEA-O005 | Empirical similarity interpretation bands | Remains open; use null calibration and confidence intervals rather than invented universal bands |
 
 ## Change procedure
 

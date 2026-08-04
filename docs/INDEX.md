@@ -14,6 +14,7 @@ This file is the navigation entry point for Codex and human reviewers.
 | `DECISION_LOG.md` | Accepted and open architectural/research decisions | Planning or scope changes |
 | `TASK_WORKFLOW.md` | Human–ChatGPT–Codex execution and review process | Before issuing tasks |
 | `contracts/FEATURE_ARTIFACT_SCHEMA.md` | Canonical tensor, manifest, tap, and storage contract | Extractor and artifact work |
+| `contracts/P1_ANALYSIS_CAMPAIGN_CONTRACT.md` | Frozen T004--T007 inference, leakage, resume, and seal contract | Phase 1 analysis or package verification |
 | `templates/TASK_TEMPLATE.md` | Template for new task specifications | Writing a Codex task |
 | `templates/RUN_REPORT_TEMPLATE.md` | Mandatory implementation evidence format | Completing a task |
 | `templates/REVIEW_TEMPLATE.md` | Human/ChatGPT review verdict format | Reviewing completed work |
@@ -39,6 +40,7 @@ This file is the navigation entry point for Codex and human reviewers.
 - `RESEARCH_CONTRACT.md`
 - `METRIC_DEFINITIONS.md`
 - `VALIDATION_PLAN.md`
+- `contracts/P1_ANALYSIS_CAMPAIGN_CONTRACT.md` for the sealed Phase 1 campaign
 
 ### Scope or research design change
 

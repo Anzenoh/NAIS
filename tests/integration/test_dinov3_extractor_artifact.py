@@ -404,24 +404,84 @@ def test_worker_source_is_offline_and_processor_free() -> None:
 
 def test_worker_source_guard_order_local_snapshot_and_no_mutation_clients() -> None:
     source = (ROOT / "scripts/dinov3_extraction_worker.py").read_text(encoding="utf-8")
-    assert source.index("guard.install()") < source.index("import numpy as np", source.index("guard.install()"))
-    assert "snapshot_files = snapshot_files_directory(snapshot_root)" in source
-    assert "model, _ = _load_model(snapshot_files)" in source
-    assert source.count("outputs = model(") == 1
-    tree = ast.parse(source)
-    imported_roots = {
-        alias.name.split(".", 1)[0]
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    } | {
-        node.module.split(".", 1)[0]
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module
-    }
-    assert "torchvision" not in imported_roots
-    for forbidden in ("hf_hub_download", "snapshot_download", "urlopen(", "pip install", "git commit"):
-        assert forbidden not in source
+
+    def assert_worker_contract(candidate: str) -> None:
+        assert candidate.index("guard.install()") < candidate.index(
+            "import numpy as np", candidate.index("guard.install()")
+        )
+        tree = ast.parse(candidate)
+        selections = [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "snapshot_files" for target in node.targets)
+        ]
+        assert len(selections) == 1
+        selection = selections[0]
+        assert isinstance(selection, ast.IfExp)
+        assert isinstance(selection.test, ast.Compare)
+        assert isinstance(selection.test.left, ast.Name)
+        assert selection.test.left.id == "execution_selector"
+        assert len(selection.test.ops) == 1 and isinstance(selection.test.ops[0], ast.Eq)
+        assert len(selection.test.comparators) == 1
+        comparator = selection.test.comparators[0]
+        assert isinstance(comparator, ast.Name) and comparator.id == "APPLE_EXECUTION_SELECTOR"
+        assert isinstance(selection.body, ast.Name) and selection.body.id == "snapshot_root"
+        assert isinstance(selection.orelse, ast.Call)
+        assert isinstance(selection.orelse.func, ast.Name)
+        assert selection.orelse.func.id == "snapshot_files_directory"
+        assert len(selection.orelse.args) == 1
+        assert isinstance(selection.orelse.args[0], ast.Name)
+        assert selection.orelse.args[0].id == "snapshot_root"
+        load_calls = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_load_model"
+        ]
+        assert len(load_calls) == 2
+        assert all(
+            call.args
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id == "snapshot_files"
+            for call in load_calls
+        )
+        assert candidate.count("outputs = model(") == 1
+        imported_roots = {
+            alias.name.split(".", 1)[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        } | {
+            node.module.split(".", 1)[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module
+        }
+        assert "torchvision" not in imported_roots
+        for forbidden in ("hf_hub_download", "snapshot_download", "urlopen(", "pip install", "git commit"):
+            assert forbidden not in candidate
+
+    assert_worker_contract(source)
+    selection_source = """snapshot_files = (
+            snapshot_root
+            if execution_selector == APPLE_EXECUTION_SELECTOR
+            else snapshot_files_directory(snapshot_root)
+        )"""
+    swapped_source = """snapshot_files = (
+            snapshot_files_directory(snapshot_root)
+            if execution_selector == APPLE_EXECUTION_SELECTOR
+            else snapshot_root
+        )"""
+    assert selection_source in source
+    with pytest.raises(AssertionError):
+        assert_worker_contract(source.replace(selection_source, swapped_source, 1))
+    with pytest.raises(AssertionError):
+        assert_worker_contract(source.replace("_load_model(snapshot_files)", "_load_model(snapshot_root)", 1))
+    with pytest.raises(AssertionError):
+        assert_worker_contract(source + "\nimport torchvision\n")
+    with pytest.raises(AssertionError):
+        assert_worker_contract(source + "\nhf_hub_download()\n")
 
 
 def test_noncanonical_batch_object_fails_before_worker(extractor_factory: Any) -> None:
