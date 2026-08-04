@@ -390,12 +390,12 @@ class AnalysisCampaign:
             "evidence_root": str(self.input.evidence_root),
         }
         atomic_write_json(directory / "input_identity.json", input_identity)
-        for destination, payload in (
-            (self.result_root / "input_identity.json", input_identity),
-            (self.result_root / "analysis_config.json", self.config.document),
-        ):
-            if not destination.exists():
-                atomic_write_json(destination, payload)
+        identity_path = self.result_root / "input_identity.json"
+        if not identity_path.exists():
+            atomic_write_json(identity_path, input_identity)
+        config_path = self.result_root / "analysis_config.json"
+        if not config_path.exists():
+            atomic_write_bytes(config_path, self.config.canonical_bytes)
         checksum_copy = self.result_root / "input_252_file_sha256.txt"
         if not checksum_copy.exists():
             atomic_write_bytes(checksum_copy, self.input.checksum_manifest_path.read_bytes())
