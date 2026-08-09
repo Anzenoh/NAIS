@@ -108,3 +108,14 @@ A scientific run is valid only when it records:
 - random seeds and split manifest;
 - artifact schema version;
 - validation results and any deviations.
+
+## 10. Phase 2 frozen-VLM compatibility pilot
+
+The explicitly named `vea.p2.vlm_compatibility_pilot.v0` experiment may load a
+frozen vision tower, frozen multimodal connector, and frozen LLM for checkpoint
+inference only. It may capture and reinject patch features immediately before
+the connector. No optimizer, backward pass, fine-tuning, or parameter update is
+permitted. Raw patch tokens and connector outputs remain separate feature
+classes. This pilot is separate from, and does not revise, any Phase 0 or Phase
+1 scientific claim; a software replay PASS does not establish encoder
+interchangeability.

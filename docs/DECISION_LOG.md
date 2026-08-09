@@ -14,6 +14,7 @@
 | VEA-D008 | Pin exact checkpoint revisions before full runs | Prevents silent model drift | Accepted |
 | VEA-D009 | Use safe tensor shards with JSON manifests as the canonical generated feature format | Provides portable, non-pickle tensor storage and explicit image ordering | Accepted |
 | VEA-D010 | Keep tested logic in a Python package; notebooks are visualization clients only | Improves reproducibility and testability | Accepted |
+| VEA-D011 | Permit the isolated `vea.p2.vlm_compatibility_pilot.v0` frozen native replay boundary | Tests serialization and connector-boundary software compatibility without changing Phase 0/1 conclusions or training any parameter | Accepted |
 
 ## Open decisions
 

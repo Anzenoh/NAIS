@@ -1,0 +1,21 @@
+{
+  "do_sample": false,
+  "expected_connector_output_size": 1536,
+  "expected_connector_type": "mlp2x_gelu",
+  "expected_image_size": 224,
+  "expected_patch_count": 196,
+  "expected_patch_size": 16,
+  "expected_vision_feature_layer": -2,
+  "expected_vision_feature_select_strategy": "patch",
+  "expected_vision_hidden_size": 768,
+  "expected_vision_model": "openai/clip-vit-base-patch16",
+  "expected_vision_tower_frozen": true,
+  "local_files_only": true,
+  "max_new_tokens": 32,
+  "model_id": "jiajunlong/TinyLLaVA-OpenELM-450M-CLIP-0.55B",
+  "num_beams": 1,
+  "prompt": "What is shown in this image? Answer briefly.",
+  "revision": "0bff7b92d5b9ef4520c61b1f7872d7d1e13537a6",
+  "schema_id": "vea.p2.vlm_anchor.v1",
+  "trust_remote_code": true
+}
