@@ -511,11 +511,11 @@ def _chat_kwargs(
     *,
     model: object,
     tokenizer: object,
-    processor: object,
-    image: object,
     image_path: Path,
     config: AnchorConfig,
 ) -> dict[str, object]:
+    """Build the exact kwargs accepted by the pinned TinyLLaVA ``chat`` ABI."""
+
     chat = getattr(model, "chat", None)
     if not callable(chat):
         raise RuntimeABIError("model.chat is required")
@@ -523,42 +523,29 @@ def _chat_kwargs(
         signature = inspect.signature(chat)
     except (TypeError, ValueError) as exc:
         raise RuntimeABIError("model.chat signature is unavailable") from exc
-    names = set(signature.parameters)
-    has_kwargs = any(
-        item.kind is inspect.Parameter.VAR_KEYWORD
-        for item in signature.parameters.values()
-    )
-
-    def accepts(name: str) -> bool:
-        return name in names or has_kwargs
-
-    values: dict[str, object] = {}
-    if not accepts("prompt"):
-        raise RuntimeABIError("model.chat must accept prompt")
-    values["prompt"] = config.prompt
-    if accepts("image"):
-        values["image"] = image
-    elif accepts("image_path"):
-        values["image_path"] = str(image_path)
-    else:
-        raise RuntimeABIError("model.chat must accept image or image_path")
-    if not accepts("tokenizer"):
-        raise RuntimeABIError("model.chat must accept the pinned tokenizer")
-    values["tokenizer"] = tokenizer
-    if accepts("image_processor"):
-        values["image_processor"] = processor
-    generation = {
-        "max_new_tokens": config.max_new_tokens,
-        "do_sample": config.do_sample,
-        "num_beams": config.num_beams,
+    required = {
+        "prompt",
+        "tokenizer",
+        "image",
+        "max_new_tokens",
+        "num_beams",
+        "top_p",
+        "temperature",
     }
-    if all(accepts(name) for name in generation):
-        values.update(generation)
-    elif accepts("generation_config"):
-        values["generation_config"] = generation
-    else:
-        raise RuntimeABIError("model.chat cannot enforce pinned greedy decoding")
-    return values
+    missing = sorted(required - set(signature.parameters))
+    if missing:
+        raise RuntimeABIError(
+            f"pinned model.chat ABI is missing required parameters {missing!r}"
+        )
+    return {
+        "prompt": config.prompt,
+        "tokenizer": tokenizer,
+        "image": str(image_path),
+        "max_new_tokens": config.max_new_tokens,
+        "num_beams": config.num_beams,
+        "top_p": None,
+        "temperature": 0,
+    }
 
 
 def _write_new(path: Path, payload: bytes) -> None:
@@ -685,9 +672,8 @@ def run_native_replay(
 
     try:
         import torch
-        from PIL import Image
         from safetensors.torch import load_file, save_file
-        from transformers import AutoModelForCausalLM, AutoProcessor, AutoTokenizer
+        from transformers import AutoModelForCausalLM, AutoTokenizer
     except (ImportError, ModuleNotFoundError) as exc:
         raise RuntimeABIError("required TinyLLaVA runtime dependency is unavailable") from exc
 
@@ -705,8 +691,6 @@ def run_native_replay(
         "trust_remote_code": config.trust_remote_code,
     }
     try:
-        tokenizer = AutoTokenizer.from_pretrained(config.model_id, **common)
-        processor = AutoProcessor.from_pretrained(config.model_id, **common)
         model = AutoModelForCausalLM.from_pretrained(
             config.model_id,
             torch_dtype=torch_dtype,
@@ -714,6 +698,26 @@ def run_native_replay(
         )
     except Exception as exc:
         raise RuntimeABIError("exact local TinyLLaVA checkpoint could not be loaded") from exc
+    try:
+        tokenizer_model_max_length = model.config.tokenizer_model_max_length
+        tokenizer_padding_side = model.config.tokenizer_padding_side
+    except AttributeError as exc:
+        raise RuntimeABIError(
+            "pinned model config is missing tokenizer_model_max_length or tokenizer_padding_side"
+        ) from exc
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            config.model_id,
+            revision=config.revision,
+            cache_dir=str(cache),
+            local_files_only=config.local_files_only,
+            trust_remote_code=config.trust_remote_code,
+            use_fast=False,
+            model_max_length=tokenizer_model_max_length,
+            padding_side=tokenizer_padding_side,
+        )
+    except Exception as exc:
+        raise RuntimeABIError("exact local TinyLLaVA tokenizer could not be loaded") from exc
     model.to(device=device, dtype=torch_dtype)
     model.eval()
     for parameter in model.parameters():
@@ -745,24 +749,15 @@ def run_native_replay(
         raise ReplayContractError("vision tower is not frozen")
     resolved["vision_tower_frozen"] = True
 
-    try:
-        native_image = Image.open(image_file).convert("RGB")
-        replay_image = Image.open(image_file).convert("RGB")
-    except Exception as exc:
-        raise ReplayContractError("image cannot be decoded as RGB") from exc
     native_kwargs = _chat_kwargs(
         model=model,
         tokenizer=tokenizer,
-        processor=processor,
-        image=native_image,
         image_path=image_file,
         config=config,
     )
     replay_kwargs = _chat_kwargs(
         model=model,
         tokenizer=tokenizer,
-        processor=processor,
-        image=replay_image,
         image_path=image_file,
         config=config,
     )

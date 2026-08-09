@@ -1,4 +1,4 @@
-# VEA-P2-T001A-R2 Apple native replay runbook
+# VEA-P2-T001A-R3 Apple native replay runbook
 
 This runbook is the user-run Tier 2 validation for target `lab_apple_rtx5090` on
 host `apple`. Run it only after independent review supplies the exact task
@@ -10,9 +10,9 @@ Log in to `apple`, then run:
 
 ```bash
 set -euo pipefail
-TASK_BRANCH='codex/vea-p2-t001a-r2-20260809-7f3c'
+TASK_BRANCH='codex/vea-p2-t001a-r3-20260809-abi'
 TASK_COMMIT_SHA='<REVIEWED_TASK_COMMIT_SHA>'
-REPO="/home/chltjsdh/vea/p2_repos/vea-p2-t001a-r2-$(date -u +%Y%m%dT%H%M%SZ)"
+REPO="/home/chltjsdh/vea/p2_repos/vea-p2-t001a-r3-$(date -u +%Y%m%dT%H%M%SZ)"
 test ! -e "$REPO"
 git clone --no-tags --single-branch --branch "$TASK_BRANCH" \
   https://github.com/Anzenoh/NAIS.git "$REPO"
@@ -126,7 +126,7 @@ printf 'image_basename=%s\n' "$(basename "$IMAGE_PATH")"
 
 ```bash
 set -euo pipefail
-OUTPUT="/home/chltjsdh/vea/p2_outputs/vea-p2-t001a-r2-$(date -u +%Y%m%dT%H%M%SZ)"
+OUTPUT="/home/chltjsdh/vea/p2_outputs/vea-p2-t001a-r3-$(date -u +%Y%m%dT%H%M%SZ)"
 LOG="${OUTPUT}.log"
 test ! -e "$OUTPUT"
 export HF_HOME='/home/chltjsdh/vea/checkpoints/huggingface'

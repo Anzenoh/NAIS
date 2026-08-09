@@ -91,6 +91,33 @@ class FakeModel:
         return TokenTensor()
 
 
+class PinnedChatModel:
+    def chat(
+        self,
+        prompt: str,
+        tokenizer: object | None = None,
+        image: str | None = None,
+        max_new_tokens: int = 512,
+        num_beams: int = 1,
+        top_p: float | None = None,
+        temperature: float = 0,
+    ) -> str:
+        return prompt
+
+
+class MissingTemperatureChatModel:
+    def chat(
+        self,
+        prompt: str,
+        tokenizer: object | None = None,
+        image: str | None = None,
+        max_new_tokens: int = 512,
+        num_beams: int = 1,
+        top_p: float | None = None,
+    ) -> str:
+        return prompt
+
+
 def _finite(value: object) -> bool:
     return all(math.isfinite(item) for item in value.values)  # type: ignore[attr-defined]
 
@@ -206,6 +233,44 @@ class ReplayBoundaryTests(unittest.TestCase):
         self.assertEqual(calls, [patch])
         self.assertTrue(injection.restored)
         self.assertIs(model.encode_images.__func__, original.__func__)
+
+
+class PinnedChatAbiTests(unittest.TestCase):
+    def test_pinned_chat_kwargs_are_exact(self) -> None:
+        config = replay.load_anchor_config(CONFIG)
+        tokenizer = object()
+        image_path = Path("relative-image.jpg")
+        kwargs = replay._chat_kwargs(  # type: ignore[attr-defined]
+            model=PinnedChatModel(),
+            tokenizer=tokenizer,
+            image_path=image_path,
+            config=config,
+        )
+        self.assertEqual(
+            kwargs,
+            {
+                "prompt": config.prompt,
+                "tokenizer": tokenizer,
+                "image": str(image_path),
+                "max_new_tokens": 32,
+                "num_beams": 1,
+                "top_p": None,
+                "temperature": 0,
+            },
+        )
+        self.assertIsInstance(kwargs["image"], str)
+        self.assertNotIn("do_sample", kwargs)
+        self.assertNotIn("generation_config", kwargs)
+        self.assertNotIn("image_processor", kwargs)
+
+    def test_missing_temperature_is_rejected(self) -> None:
+        with self.assertRaisesRegex(replay.RuntimeABIError, "temperature"):
+            replay._chat_kwargs(  # type: ignore[attr-defined]
+                model=MissingTemperatureChatModel(),
+                tokenizer=object(),
+                image_path=Path("image.jpg"),
+                config=replay.load_anchor_config(CONFIG),
+            )
 
     def test_original_method_restored_after_exception(self) -> None:
         model = FakeModel()
