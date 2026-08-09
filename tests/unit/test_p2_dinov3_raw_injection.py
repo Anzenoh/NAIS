@@ -5,7 +5,10 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -81,6 +84,161 @@ class GeometryAndDINOContractTests(unittest.TestCase):
         self.assertIs(fake_torch.source, patch)
 
 
+class ExplicitAppleRootTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        base = Path(self.temporary.name)
+        self.repository = base / "repository"
+        self.runtime = base / "runtime"
+        self.snapshot = base / "snapshot"
+        self.repository.mkdir()
+        self.runtime.mkdir()
+        self.snapshot.mkdir()
+        (self.repository / smoke.DINO_RUNTIME_PROFILE).parent.mkdir(parents=True)
+        (self.repository / smoke.DINO_RUNTIME_PROFILE).write_text("{}", encoding="utf-8")
+        (self.repository / smoke.DINO_SNAPSHOT_PROFILE).parent.mkdir(parents=True)
+        (self.repository / smoke.DINO_SNAPSHOT_PROFILE).write_text("{}", encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def _make_interpreter(self, name: str = "python") -> Path:
+        interpreter = self.runtime / "bin" / name
+        interpreter.parent.mkdir(exist_ok=True)
+        interpreter.write_bytes(b"fake")
+        interpreter.chmod(0o700)
+        return interpreter
+
+    def _probe(self, *, prefix: Path | None = None, returncode: int = 0) -> SimpleNamespace:
+        return SimpleNamespace(
+            returncode=returncode,
+            stdout=str(self.runtime if prefix is None else prefix) + "\n",
+        )
+
+    def test_explicit_roots_validate_without_localappdata_or_default_resolvers(self) -> None:
+        interpreter = self._make_interpreter()
+        snapshot_calls: list[tuple[Path, Path, Path]] = []
+
+        def validate_snapshot(root: Path, *, profile_path: Path, repository_root: Path, runtime_root: Path) -> None:
+            snapshot_calls.append((root, repository_root, runtime_root))
+
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            smoke, "_load_pinned_runtime_root", return_value=self.runtime.resolve()
+        ), mock.patch.object(
+            smoke, "resolve_apple_dinov3_interpreter", return_value=interpreter
+        ), mock.patch.object(
+            smoke, "_validate_pinned_snapshot", side_effect=validate_snapshot
+        ):
+            bindings = smoke.validate_dinov3_roots(
+                repository_root=self.repository,
+                runtime_root=self.runtime,
+                snapshot_root=self.snapshot,
+            )
+        self.assertEqual(bindings.runtime_root, self.runtime.resolve())
+        self.assertEqual(bindings.snapshot_root, self.snapshot.resolve())
+        self.assertEqual(snapshot_calls, [(self.snapshot.resolve(), self.repository.resolve(), self.runtime.resolve())])
+        source = Path(smoke.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("resolve_default_runtime_root", source)
+        self.assertNotIn("resolve_default_snapshot_root", source)
+
+    def test_runtime_profile_root_mismatch_is_rejected(self) -> None:
+        other = self.runtime.parent / "other-runtime"
+        with mock.patch.object(smoke, "_load_pinned_runtime_root", return_value=other):
+            with self.assertRaisesRegex(smoke.DINOv3RawContractError, "pinned Apple profile"):
+                smoke.validate_dinov3_roots(
+                    repository_root=self.repository,
+                    runtime_root=self.runtime,
+                    snapshot_root=self.snapshot,
+                )
+
+    def test_direct_bin_python_is_accepted_and_prefix_probed(self) -> None:
+        interpreter = self._make_interpreter()
+        runner = mock.Mock(return_value=self._probe())
+        resolved = smoke.resolve_apple_dinov3_interpreter(self.runtime, run=runner)
+        self.assertEqual(resolved, interpreter.resolve())
+        self.assertEqual(runner.call_args.args[0][0], str(interpreter.resolve()))
+        self.assertIn("sys.prefix", runner.call_args.args[0][3])
+
+    def test_bin_python3_is_the_only_fallback(self) -> None:
+        interpreter = self._make_interpreter("python3")
+        resolved = smoke.resolve_apple_dinov3_interpreter(
+            self.runtime, run=mock.Mock(return_value=self._probe())
+        )
+        self.assertEqual(resolved, interpreter.resolve())
+
+    def test_legacy_venv_bin_python_is_never_selected(self) -> None:
+        legacy = self.runtime / "venv" / "bin" / "python"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_bytes(b"fake")
+        legacy.chmod(0o700)
+        runner = mock.Mock()
+        with self.assertRaises(smoke.DINOv3RawContractError):
+            smoke.resolve_apple_dinov3_interpreter(self.runtime, run=runner)
+        runner.assert_not_called()
+
+    def test_explicit_roots_are_bound_in_extractor_config(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeConfig:
+            def __init__(self, profile_path: Path, **kwargs: object) -> None:
+                captured["profile_path"] = profile_path
+                captured.update(kwargs)
+
+        class FakeExtractor:
+            def __init__(self, config: object) -> None:
+                captured["config"] = config
+
+        fake_module = SimpleNamespace(
+            DINOv3ExtractorConfig=FakeConfig,
+            DINOv3VisionEncoderExtractor=FakeExtractor,
+        )
+        bindings = smoke.DINOv3RootBindings(
+            self.repository.resolve(), self.runtime.resolve(), self.snapshot.resolve(), self.runtime / "bin/python"
+        )
+        profile = self.repository / "extractor.json"
+        runtime_profile = self.repository / "runtime.json"
+        with mock.patch.dict(
+            sys.modules,
+            {"vision_encoder_alignment.extractors.dinov3": fake_module},
+        ):
+            smoke._construct_dinov3_extractor(
+                bindings,
+                profile_path=profile,
+                runtime_profile_path=runtime_profile,
+            )
+        self.assertIs(captured["runtime_root"], bindings.runtime_root)
+        self.assertIs(captured["snapshot_root"], bindings.snapshot_root)
+        self.assertEqual(captured["execution_selector"], smoke.DINO_SELECTOR)
+        self.assertEqual(captured["apple_runtime_profile_path"], runtime_profile)
+
+    def test_compatibility_context_restores_references_after_success(self) -> None:
+        originals = tuple(lambda *args, index=index, **kwargs: (index, args, kwargs) for index in range(3))
+        modules = tuple(SimpleNamespace(runtime_python_path=value) for value in originals)
+        bindings = smoke.DINOv3RootBindings(
+            self.repository.resolve(), self.runtime.resolve(), self.snapshot.resolve(), self.runtime / "bin/python"
+        )
+        with mock.patch.object(smoke, "_runtime_python_modules", return_value=modules):
+            with smoke.apple_dinov3_interpreter_compatibility(bindings):
+                for module in modules:
+                    self.assertEqual(
+                        module.runtime_python_path(self.runtime, interpreter_layout="linux_bin"),
+                        bindings.interpreter,
+                    )
+            self.assertEqual(tuple(module.runtime_python_path for module in modules), originals)
+
+    def test_compatibility_context_restores_references_after_exception(self) -> None:
+        originals = tuple(lambda *args, index=index, **kwargs: index for index in range(3))
+        modules = tuple(SimpleNamespace(runtime_python_path=value) for value in originals)
+        bindings = smoke.DINOv3RootBindings(
+            self.repository.resolve(), self.runtime.resolve(), self.snapshot.resolve(), self.runtime / "bin/python"
+        )
+        with mock.patch.object(smoke, "_runtime_python_modules", return_value=modules):
+            with self.assertRaisesRegex(RuntimeError, "boom"):
+                with smoke.apple_dinov3_interpreter_compatibility(bindings):
+                    raise RuntimeError("boom")
+            self.assertEqual(tuple(module.runtime_python_path for module in modules), originals)
+
+
 class ReplayAndResultTests(unittest.TestCase):
     def test_raw_replay_bypasses_clip_vision_and_restores_method(self) -> None:
         model = FakeModel()
@@ -143,6 +301,17 @@ assert not any(name==root or name.startswith(root+'.') for name in added for roo
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertIn("--tinyllava-config", completed.stdout)
+        self.assertIn("--dinov3-runtime-root", completed.stdout)
+        self.assertIn("--dinov3-snapshot-root", completed.stdout)
+
+    def test_cli_requires_both_explicit_dino_roots(self) -> None:
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT)], cwd=ROOT,
+            check=False, capture_output=True, text=True, shell=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("--dinov3-runtime-root", completed.stderr)
+        self.assertIn("--dinov3-snapshot-root", completed.stderr)
 
 
 if __name__ == "__main__":

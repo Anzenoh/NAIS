@@ -10,10 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import subprocess
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 from . import tinyllava_native_replay as native_replay
 
@@ -27,6 +29,7 @@ DINO_TAP = "block_11"
 DINO_SELECTOR = "dinov3_apple_cuda_fp32_v1"
 DINO_PROFILE = "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json"
 DINO_RUNTIME_PROFILE = "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json"
+DINO_SNAPSHOT_PROFILE = "configs/model_snapshots/dinov3_vit_b16_r5931719_v0.json"
 
 
 class DINOv3RawInjectionError(RuntimeError):
@@ -45,6 +48,210 @@ class DINOv3RawContractError(DINOv3RawInjectionError):
 class GeometryPlan:
     resize_size: tuple[int, int]
     crop_box: tuple[int, int, int, int]
+
+
+@dataclass(frozen=True, slots=True)
+class DINOv3RootBindings:
+    repository_root: Path
+    runtime_root: Path
+    snapshot_root: Path
+    interpreter: Path
+
+
+def _is_link(path: Path) -> bool:
+    try:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        return bool(is_junction is not None and is_junction())
+    except OSError as exc:
+        raise DINOv3RawContractError("unable to inspect root path") from exc
+
+
+def _absolute_non_link_directory(value: str | Path, *, label: str) -> Path:
+    if not isinstance(value, (str, Path)):
+        raise DINOv3RawContractError(f"{label} must be a string or Path")
+    candidate = Path(value)
+    if not candidate.is_absolute() or _is_link(candidate):
+        raise DINOv3RawContractError(f"{label} must be an absolute non-link directory")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise DINOv3RawContractError(f"{label} does not exist") from exc
+    if not resolved.is_dir():
+        raise DINOv3RawContractError(f"{label} must be an existing directory")
+    return resolved
+
+
+def _contains(parent: Path, child: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _require_disjoint_roots(*roots: tuple[str, Path]) -> None:
+    for index, (left_name, left) in enumerate(roots):
+        for right_name, right in roots[index + 1 :]:
+            if _contains(left, right) or _contains(right, left):
+                raise DINOv3RawContractError(
+                    f"{left_name} and {right_name} must not overlap"
+                )
+
+
+def _load_pinned_runtime_root(profile_path: Path) -> Path:
+    from vision_encoder_alignment.production_runtime_contract import (
+        load_production_runtime_profile,
+    )
+
+    profile = load_production_runtime_profile(profile_path)
+    if profile.selector != DINO_SELECTOR or profile.interpreter_layout != "linux_bin":
+        raise DINOv3RawContractError("pinned Apple DINOv3 runtime profile mismatch")
+    return Path(profile.runtime_root)
+
+
+def _validate_pinned_snapshot(
+    snapshot_root: Path,
+    *,
+    profile_path: Path,
+    repository_root: Path,
+    runtime_root: Path,
+) -> None:
+    from vision_encoder_alignment.snapshot_boundary import (
+        load_snapshot_profile,
+        validate_snapshot_root,
+    )
+
+    profile = load_snapshot_profile(profile_path)
+    validate_snapshot_root(
+        snapshot_root,
+        profile,
+        repository_root=repository_root,
+        persistent_runtime_root=runtime_root,
+    )
+
+
+def resolve_apple_dinov3_interpreter(
+    runtime_root: str | Path,
+    *,
+    run: Callable[..., Any] = subprocess.run,
+) -> Path:
+    """Validate the directly rooted Apple venv interpreter and its identity."""
+
+    root = _absolute_non_link_directory(runtime_root, label="DINO runtime root")
+    primary = root / "bin" / "python"
+    fallback = root / "bin" / "python3"
+    candidate = primary if primary.exists() or primary.is_symlink() else fallback
+    if (
+        not candidate.exists()
+        or not candidate.is_file()
+        or candidate.is_symlink()
+        or not os.access(candidate, os.X_OK)
+    ):
+        raise DINOv3RawContractError(
+            "Apple DINOv3 interpreter must be executable bin/python or bin/python3"
+        )
+    try:
+        interpreter = candidate.resolve(strict=True)
+        interpreter.relative_to(root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise DINOv3RawContractError("Apple DINOv3 interpreter escapes its runtime root") from exc
+    try:
+        completed = run(
+            [
+                str(interpreter),
+                "-I",
+                "-c",
+                "from pathlib import Path; import sys; print(Path(sys.prefix).resolve())",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            shell=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise DINOv3RawContractError("Apple DINOv3 interpreter prefix probe failed") from exc
+    try:
+        prefix = Path(completed.stdout.strip()).resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise DINOv3RawContractError("Apple DINOv3 interpreter prefix probe failed") from exc
+    if completed.returncode != 0 or prefix != root:
+        raise DINOv3RawContractError("Apple DINOv3 interpreter prefix is not the runtime root")
+    return interpreter
+
+
+def validate_dinov3_roots(
+    *,
+    repository_root: str | Path,
+    runtime_root: str | Path,
+    snapshot_root: str | Path,
+) -> DINOv3RootBindings:
+    """Validate all explicit Apple DINO roots without consulting host defaults."""
+
+    repository = _absolute_non_link_directory(repository_root, label="repository root")
+    runtime = _absolute_non_link_directory(runtime_root, label="DINO runtime root")
+    snapshot = _absolute_non_link_directory(snapshot_root, label="DINO snapshot root")
+    _require_disjoint_roots(
+        ("repository root", repository),
+        ("DINO runtime root", runtime),
+        ("DINO snapshot root", snapshot),
+    )
+    runtime_profile = repository / DINO_RUNTIME_PROFILE
+    snapshot_profile = repository / DINO_SNAPSHOT_PROFILE
+    if not runtime_profile.is_file() or not snapshot_profile.is_file():
+        raise DINOv3RawContractError("verified Apple DINOv3 root profiles are unavailable")
+    expected_runtime = _load_pinned_runtime_root(runtime_profile)
+    if not expected_runtime.is_absolute() or runtime.as_posix() != expected_runtime.as_posix():
+        raise DINOv3RawContractError("DINO runtime root does not match the pinned Apple profile")
+    interpreter = resolve_apple_dinov3_interpreter(runtime)
+    _validate_pinned_snapshot(
+        snapshot,
+        profile_path=snapshot_profile,
+        repository_root=repository,
+        runtime_root=runtime,
+    )
+    return DINOv3RootBindings(repository, runtime, snapshot, interpreter)
+
+
+def _runtime_python_modules() -> tuple[object, object, object]:
+    from vision_encoder_alignment import dinov3_extraction_boundary, runtime_boundary
+    from vision_encoder_alignment.extractors import dinov3
+
+    return runtime_boundary, dinov3_extraction_boundary, dinov3
+
+
+@contextmanager
+def apple_dinov3_interpreter_compatibility(
+    bindings: DINOv3RootBindings,
+) -> Iterator[None]:
+    """Temporarily adapt the shared Linux layout resolver for the accepted Apple venv."""
+
+    modules = _runtime_python_modules()
+    originals = tuple(getattr(module, "runtime_python_path") for module in modules)
+    delegate = originals[0]
+
+    def replacement(
+        runtime_root: str | Path,
+        *,
+        interpreter_layout: str = "windows_scripts",
+    ) -> Path:
+        try:
+            candidate = Path(runtime_root).resolve(strict=True)
+        except (OSError, RuntimeError):
+            candidate = Path(runtime_root)
+        if interpreter_layout == "linux_bin" and candidate == bindings.runtime_root:
+            return bindings.interpreter
+        return delegate(runtime_root, interpreter_layout=interpreter_layout)
+
+    try:
+        for module in modules:
+            setattr(module, "runtime_python_path", replacement)
+        yield
+    finally:
+        for module, original in zip(modules, originals, strict=True):
+            setattr(module, "runtime_python_path", original)
 
 
 def canonical_geometry_plan(width: int, height: int) -> GeometryPlan:
@@ -111,32 +318,59 @@ def validate_dinov3_block11_patch(
         raise DINOv3RawContractError("DINOv3 block_11 patch contains NaN or Inf")
 
 
-def extract_dinov3_block11(pixels: object, *, repository_root: str | Path) -> Any:
-    """Run the verified isolated DINOv3 extractor and return raw block-11 patches."""
-
-    import numpy as np
-
-    from vision_encoder_alignment.extractors.base import CanonicalImageBatch
+def _construct_dinov3_extractor(
+    bindings: DINOv3RootBindings,
+    *,
+    profile_path: Path,
+    runtime_profile_path: Path,
+) -> object:
     from vision_encoder_alignment.extractors.dinov3 import (
         DINOv3ExtractorConfig,
         DINOv3VisionEncoderExtractor,
     )
 
-    repository = Path(repository_root).resolve(strict=True)
+    return DINOv3VisionEncoderExtractor(
+        DINOv3ExtractorConfig(
+            profile_path,
+            runtime_root=bindings.runtime_root,
+            snapshot_root=bindings.snapshot_root,
+            execution_selector=DINO_SELECTOR,
+            apple_runtime_profile_path=runtime_profile_path,
+        )
+    )
+
+
+def extract_dinov3_block11(
+    pixels: object,
+    *,
+    repository_root: str | Path,
+    dinov3_runtime_root: str | Path,
+    dinov3_snapshot_root: str | Path,
+) -> Any:
+    """Run the verified isolated DINOv3 extractor and return raw block-11 patches."""
+
+    import numpy as np
+
+    from vision_encoder_alignment.extractors.base import CanonicalImageBatch
+    bindings = validate_dinov3_roots(
+        repository_root=repository_root,
+        runtime_root=dinov3_runtime_root,
+        snapshot_root=dinov3_snapshot_root,
+    )
+    repository = bindings.repository_root
     profile = repository / DINO_PROFILE
     runtime_profile = repository / DINO_RUNTIME_PROFILE
     if not profile.is_file() or not runtime_profile.is_file():
         raise DINOv3RawContractError("verified Apple DINOv3 profiles are unavailable")
     batch = CanonicalImageBatch(("dinov3_raw_smoke",), pixels)
     try:
-        extractor = DINOv3VisionEncoderExtractor(
-            DINOv3ExtractorConfig(
-                profile,
-                execution_selector=DINO_SELECTOR,
-                apple_runtime_profile_path=runtime_profile,
+        with apple_dinov3_interpreter_compatibility(bindings):
+            extractor = _construct_dinov3_extractor(
+                bindings,
+                profile_path=profile,
+                runtime_profile_path=runtime_profile,
             )
-        )
-        result = extractor.extract(batch, tap_names=(DINO_TAP,))
+            result = extractor.extract(batch, tap_names=(DINO_TAP,))
     except Exception as exc:
         raise DINOv3RawInjectionError("verified isolated DINOv3 block_11 extraction failed") from exc
     finally:
@@ -223,6 +457,8 @@ def run_dinov3_raw_injection_smoke(
     image_path: str | Path,
     cache_root: str | Path,
     repository_root: str | Path,
+    dinov3_runtime_root: str | Path,
+    dinov3_snapshot_root: str | Path,
     output_dir: str | Path,
     device: str,
     dtype: str,
@@ -232,7 +468,12 @@ def run_dinov3_raw_injection_smoke(
     config = native_replay.load_anchor_config(tinyllava_config)
     image = Path(image_path)
     cache = Path(cache_root)
-    repository = Path(repository_root).resolve(strict=True)
+    bindings = validate_dinov3_roots(
+        repository_root=repository_root,
+        runtime_root=dinov3_runtime_root,
+        snapshot_root=dinov3_snapshot_root,
+    )
+    repository = bindings.repository_root
     output = Path(output_dir)
     if not image.is_file() or not cache.is_dir() or not repository.is_dir():
         raise DINOv3RawContractError("image, cache root, and repository root must exist")
@@ -246,7 +487,12 @@ def run_dinov3_raw_injection_smoke(
 
     # This completes before TinyLLaVA imports or model construction begin.
     pixels = canonical_rgb_nhwc(image)
-    dinov3_patch = extract_dinov3_block11(pixels, repository_root=repository)
+    dinov3_patch = extract_dinov3_block11(
+        pixels,
+        repository_root=repository,
+        dinov3_runtime_root=bindings.runtime_root,
+        dinov3_snapshot_root=bindings.snapshot_root,
+    )
 
     try:
         import torch
@@ -410,8 +656,10 @@ def write_blocker_result(output_dir: str | Path, *, stage: str, error: BaseExcep
 
 __all__ = [
     "DINO_MODEL_ID", "DINO_REVISION", "DINO_TAP", "GEOMETRY_ID", "RESULT_SCHEMA_ID",
-    "STATUS", "DINOv3RawContractError", "DINOv3RawInjectionError", "GeometryPlan",
+    "STATUS", "DINOv3RawContractError", "DINOv3RawInjectionError", "DINOv3RootBindings", "GeometryPlan",
+    "apple_dinov3_interpreter_compatibility",
     "build_result", "canonical_geometry_plan", "canonical_rgb_nhwc", "extract_dinov3_block11",
-    "raw_numpy_to_torch", "run_dinov3_raw_injection_smoke", "validate_dinov3_block11_patch",
+    "raw_numpy_to_torch", "resolve_apple_dinov3_interpreter", "run_dinov3_raw_injection_smoke",
+    "validate_dinov3_block11_patch", "validate_dinov3_roots",
     "write_blocker_result",
 ]

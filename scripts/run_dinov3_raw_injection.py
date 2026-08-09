@@ -25,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--image-path", required=True)
     parser.add_argument("--cache-root", required=True)
     parser.add_argument("--repository-root", required=True)
+    parser.add_argument("--dinov3-runtime-root", required=True)
+    parser.add_argument("--dinov3-snapshot-root", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--device", required=True)
     parser.add_argument("--dtype", required=True, choices=("float16", "bfloat16", "float32"))
@@ -40,6 +42,8 @@ def main(argv: list[str] | None = None) -> int:
             image_path=args.image_path,
             cache_root=args.cache_root,
             repository_root=args.repository_root,
+            dinov3_runtime_root=args.dinov3_runtime_root,
+            dinov3_snapshot_root=args.dinov3_snapshot_root,
             output_dir=args.output_dir,
             device=args.device,
             dtype=args.dtype,
