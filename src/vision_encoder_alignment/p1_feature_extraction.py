@@ -238,7 +238,7 @@ EXPECTED_GEOMETRY = {
 }
 EXPECTED_RUNTIME = {
     "dinov3": {
-        "extractor_profile": {"path": "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json", "sha256": "7b83fd74033f359a5a7b4e7d052b8d1bd106c658355ae86499947d151b0176a9"},
+        "extractor_profile": {"path": "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json", "sha256": "b0d8c3fee92a783aa873efedcadab68c48bcde8aac458d767bb5fa77cac1cb8d"},
         "interpreter": "/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python3",
         "profile": {"path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json", "profile_id": "dinov3-apple-cuda-fp32-v1", "sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223"},
     },
