@@ -118,6 +118,41 @@ class MissingTemperatureChatModel:
         return prompt
 
 
+class CosineTensor:
+    def __init__(self) -> None:
+        self.dtypes: list[object] = []
+        self.reshape_args: list[tuple[int, ...]] = []
+
+    def to(self, *, dtype: object) -> "CosineTensor":
+        self.dtypes.append(dtype)
+        return self
+
+    def reshape(self, *shape: int) -> "CosineTensor":
+        self.reshape_args.append(shape)
+        return self
+
+
+class CosineScalar:
+    def item(self) -> float:
+        return 0.9999995
+
+
+class FakeCosineFunctional:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, object, int]] = []
+
+    def cosine_similarity(self, left: object, right: object, *, dim: int) -> CosineScalar:
+        self.calls.append((left, right, dim))
+        return CosineScalar()
+
+
+class FakeCosineTorch:
+    float64 = "float64"
+
+    def __init__(self) -> None:
+        self.nn = type("FakeNN", (), {"functional": FakeCosineFunctional()})()
+
+
 def _finite(value: object) -> bool:
     return all(math.isfinite(item) for item in value.values)  # type: ignore[attr-defined]
 
@@ -271,6 +306,32 @@ class PinnedChatAbiTests(unittest.TestCase):
                 image_path=Path("image.jpg"),
                 config=replay.load_anchor_config(CONFIG),
             )
+
+
+class ConnectorCosineTests(unittest.TestCase):
+    def test_connector_cosine_uses_float64_and_keeps_threshold(self) -> None:
+        native = CosineTensor()
+        replay_tensor = CosineTensor()
+        fake_torch = FakeCosineTorch()
+        cosine = replay._connector_cosine(  # type: ignore[attr-defined]
+            native,
+            replay_tensor,
+            torch=fake_torch,
+        )
+        self.assertEqual(cosine, 0.9999995)
+        self.assertEqual(native.dtypes, ["float64"])
+        self.assertEqual(replay_tensor.dtypes, ["float64"])
+        self.assertEqual(native.reshape_args, [(1, -1)])
+        self.assertEqual(replay_tensor.reshape_args, [(1, -1)])
+        self.assertEqual(fake_torch.nn.functional.calls[0][2], 1)
+        self.assertEqual(replay._CONNECTOR_COSINE_THRESHOLD, 0.999999)  # type: ignore[attr-defined]
+
+    def test_connector_cosine_error_reports_value_and_threshold(self) -> None:
+        with self.assertRaisesRegex(
+            replay.ReplayContractError,
+            r"0\.5.*0\.999999",
+        ):
+            replay._require_connector_cosine(0.5)  # type: ignore[attr-defined]
 
     def test_original_method_restored_after_exception(self) -> None:
         model = FakeModel()

@@ -23,6 +23,7 @@ ANCHOR_SCHEMA_ID = "vea.p2.vlm_anchor.v1"
 RESULT_SCHEMA_ID = "vea.p2.t001a.native_replay.v1"
 MODEL_TYPE = "tinyllava"
 PATCH_TENSOR_KEY = "patch_features"
+_CONNECTOR_COSINE_THRESHOLD = 0.999999
 
 
 class NativeReplayError(RuntimeError):
@@ -642,6 +643,26 @@ def _prepare_for_connector(patch: object, connector: object) -> object:
         raise RuntimeABIError("connector device and dtype are unavailable") from exc
 
 
+def _connector_cosine(native_connector: object, replay_connector: object, *, torch: object) -> float:
+    """Compute the connector cosine using float64 inputs before reduction."""
+
+    return float(
+        torch.nn.functional.cosine_similarity(
+            native_connector.to(dtype=torch.float64).reshape(1, -1),
+            replay_connector.to(dtype=torch.float64).reshape(1, -1),
+            dim=1,
+        ).item()
+    )
+
+
+def _require_connector_cosine(cosine: float) -> None:
+    if not math.isfinite(cosine) or cosine < _CONNECTOR_COSINE_THRESHOLD:
+        raise ReplayContractError(
+            "connector cosine similarity "
+            f"{cosine!r} is below threshold {_CONNECTOR_COSINE_THRESHOLD}"
+        )
+
+
 def run_native_replay(
     *,
     config_path: str | Path,
@@ -833,17 +854,10 @@ def run_native_replay(
     native_connector = native.connector_tensor.detach().cpu()
     replay_connector = replay.connector_tensor.detach().cpu()
     connector_max = float((native_connector - replay_connector).abs().max().item())
-    cosine = float(
-        torch.nn.functional.cosine_similarity(
-            native_connector.float().reshape(1, -1),
-            replay_connector.float().reshape(1, -1),
-            dim=1,
-        ).item()
-    )
+    cosine = _connector_cosine(native_connector, replay_connector, torch=torch)
     if not math.isfinite(connector_max) or connector_max > 1e-5:
         raise ReplayContractError("connector maximum absolute difference exceeds 1e-5")
-    if not math.isfinite(cosine) or cosine < 0.999999:
-        raise ReplayContractError("connector cosine similarity is below 0.999999")
+    _require_connector_cosine(cosine)
     if native_tokens != replay_tokens:
         raise ReplayContractError("native and replay generated token IDs differ")
     if native_text != replay_text:
