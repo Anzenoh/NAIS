@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import importlib
 import json
 import statistics
 import subprocess
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
@@ -39,6 +41,64 @@ CONNECTOR_SHAPE = (196, 1536)
 
 class AlignmentPilotError(RuntimeError):
     """A bounded pilot contract was violated."""
+
+
+class PilotStageError(AlignmentPilotError):
+    """An execution failure carrying bounded experiment coordinates."""
+
+    def __init__(
+        self,
+        stage: str,
+        *,
+        image_id: str | None = None,
+        relative_path: str | None = None,
+        condition: str | None = None,
+    ) -> None:
+        super().__init__(f"{stage} failed")
+        self.stage = stage
+        self.image_id = image_id
+        self.relative_path = Path(relative_path).name if relative_path is not None else None
+        self.condition = condition
+
+
+@contextmanager
+def execution_context(
+    stage: str,
+    *,
+    image_id: str | None = None,
+    relative_path: str | None = None,
+    condition: str | None = None,
+) -> Iterable[None]:
+    """Attach exact bounded coordinates while preserving the exception chain."""
+
+    try:
+        yield
+    except PilotStageError:
+        raise
+    except Exception as exc:
+        raise PilotStageError(
+            stage,
+            image_id=image_id,
+            relative_path=relative_path,
+            condition=condition,
+        ) from exc
+
+
+def _bounded_exception_message(error: BaseException) -> str:
+    return " ".join(str(error).splitlines())[:512]
+
+
+def bounded_cause_chain(error: BaseException) -> list[dict[str, str]]:
+    """Return at most eight exception identities without traceback or runtime state."""
+
+    result: list[dict[str, str]] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and len(result) < 8 and id(current) not in seen:
+        seen.add(id(current))
+        result.append({"type": type(current).__name__[:128], "message": _bounded_exception_message(current)})
+        current = current.__cause__ if current.__cause__ is not None else current.__context__
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,24 +194,30 @@ def select_pilot_rows(rows_or_path: Sequence[ManifestRow] | str | Path) -> Pilot
     return PilotSelection(calibration, test)
 
 
-def validate_selected_sources(selection: PilotSelection, dataset_root: str | Path) -> tuple[Path, ...]:
-    """Resolve and hash all selected files without allowing path escape or substitution."""
-
+def _validated_dataset_root(dataset_root: str | Path) -> Path:
     root = Path(dataset_root).resolve(strict=True)
     if not root.is_dir() or root.is_symlink():
         raise AlignmentPilotError("dataset root must be an existing non-link directory")
-    paths: list[Path] = []
-    for row in selection.all_rows:
-        unresolved = root / row.relative_path
-        if unresolved.is_symlink():
-            raise AlignmentPilotError(f"selected source path is a link: {row.relative_path}")
-        candidate = unresolved.resolve(strict=True)
-        if candidate.parent != root or not candidate.is_file():
-            raise AlignmentPilotError(f"selected source path is not a bounded regular file: {row.relative_path}")
-        if native.sha256_file(candidate) != row.source_sha256:
-            raise AlignmentPilotError(f"selected source SHA-256 mismatch: {row.relative_path}")
-        paths.append(candidate)
-    return tuple(paths)
+    return root
+
+
+def _validate_selected_source(row: ManifestRow, root: Path) -> Path:
+    unresolved = root / row.relative_path
+    if unresolved.is_symlink():
+        raise AlignmentPilotError(f"selected source path is a link: {row.relative_path}")
+    candidate = unresolved.resolve(strict=True)
+    if candidate.parent != root or not candidate.is_file():
+        raise AlignmentPilotError(f"selected source path is not a bounded regular file: {row.relative_path}")
+    if native.sha256_file(candidate) != row.source_sha256:
+        raise AlignmentPilotError(f"selected source SHA-256 mismatch: {row.relative_path}")
+    return candidate
+
+
+def validate_selected_sources(selection: PilotSelection, dataset_root: str | Path) -> tuple[Path, ...]:
+    """Resolve and hash all selected files without allowing path escape or substitution."""
+
+    root = _validated_dataset_root(dataset_root)
+    return tuple(_validate_selected_source(row, root) for row in selection.all_rows)
 
 
 def _require_image_partition(array: object, expected_images: int, label: str) -> Any:
@@ -314,7 +380,7 @@ def fake_orchestration(
     *,
     extract_dino_batch: Callable[[tuple[str, ...]], object],
     load_tinyllava: Callable[[], object],
-    capture_calibration: Callable[[object, str], object],
+    capture_calibration_feature: Callable[[object, str], object],
     generate_test: Callable[[object, str, str], object],
     calibration_ids: Sequence[str],
     test_ids: Sequence[str],
@@ -326,13 +392,19 @@ def fake_orchestration(
     extract_dino_batch(tuple(calibration_ids) + tuple(test_ids))
     model = load_tinyllava()
     for image_id in calibration_ids:
-        capture_calibration(model, image_id)
+        capture_calibration_feature(model, image_id)
     generation_calls = 0
     for image_id in test_ids:
         for condition in CONDITIONS:
             generate_test(model, image_id, condition)
             generation_calls += 1
-    return {"dinov3_batch_extractions": 1, "tinyllava_model_loads": 1, "calibration_native_calls": 8, "test_generation_calls": generation_calls}
+    return {
+        "dinov3_batch_extractions": 1,
+        "tinyllava_model_loads": 1,
+        "calibration_native_feature_calls": 8,
+        "calibration_generation_calls": 0,
+        "test_generation_calls": generation_calls,
+    }
 
 
 def build_result(**values: object) -> dict[str, object]:
@@ -439,6 +511,91 @@ def _numpy(tensor: object) -> Any:
     return tensor.detach().float().cpu().numpy()  # type: ignore[attr-defined]
 
 
+@dataclass(frozen=True, slots=True)
+class DirectCalibrationCapture:
+    patch: object
+    connector: object
+    vision_calls: int
+    connector_calls: int
+
+
+def capture_native_calibration_features(
+    *,
+    model: object,
+    vision_tower: object,
+    connector: object,
+    image_path: str | Path,
+    dtype: str,
+) -> DirectCalibrationCapture:
+    """Capture native patch/connector pairs without invoking language generation."""
+
+    module_name = getattr(model.__class__, "__module__", None)
+    if not isinstance(module_name, str) or not module_name:
+        raise native.RuntimeABIError("pinned model runtime module is unavailable")
+    try:
+        runtime_module = importlib.import_module(module_name)
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise native.RuntimeABIError("pinned model runtime module cannot be resolved") from exc
+    load_image = getattr(runtime_module, "load_image", None)
+    process_images = getattr(runtime_module, "process_images", None)
+    if not callable(load_image) or not callable(process_images):
+        raise native.RuntimeABIError("pinned runtime load_image and process_images are required")
+    image_processor = getattr(vision_tower, "_image_processor", None)
+    model_config = getattr(model, "config", None)
+    model_device = getattr(model, "device", None)
+    model_dtype = getattr(model, "dtype", None)
+    if image_processor is None or model_config is None or model_device is None or model_dtype is None:
+        raise native.RuntimeABIError("pinned preprocessing runtime attributes are unavailable")
+    try:
+        loaded_image = load_image(str(Path(image_path)))
+        image_tensor = process_images([loaded_image], image_processor, model_config)
+        image_tensor = image_tensor.to(device=model_device, dtype=model_dtype)
+    except Exception as exc:
+        raise native.RuntimeABIError("pinned TinyLLaVA image preprocessing failed") from exc
+
+    state = native.CaptureState()
+    handles: list[object] = []
+    returned: object | None = None
+    try:
+        handles.append(vision_tower.register_forward_hook(state.vision_hook))
+        handles.append(connector.register_forward_pre_hook(state.connector_pre_hook))
+        handles.append(connector.register_forward_hook(state.connector_hook))
+        encode_images = getattr(model, "encode_images", None)
+        if not callable(encode_images):
+            raise native.RuntimeABIError("model.encode_images is required for calibration capture")
+        returned = encode_images(image_tensor)
+    except (native.NativeReplayError, AlignmentPilotError):
+        raise
+    except Exception as exc:
+        raise native.RuntimeABIError("direct native calibration capture failed") from exc
+    finally:
+        native._remove_hooks(handles)
+
+    _validate_capture(state, dtype, injected=False)
+    if state.vision_calls != 1 or state.connector_calls != 1:
+        raise AlignmentPilotError("direct calibration must invoke vision and connector exactly once")
+    if returned is None or state.connector_tensor is None:
+        raise AlignmentPilotError("direct calibration connector return is unavailable")
+    try:
+        returned_matches_hook = bool(returned.detach().equal(state.connector_tensor))
+    except AttributeError as exc:
+        raise AlignmentPilotError("direct calibration return cannot be compared exactly") from exc
+    if not returned_matches_hook:
+        raise AlignmentPilotError("encode_images return differs from the connector hook output")
+
+    patch = writable_contiguous_float32(_numpy(state.patch_tensor))
+    connector_output = writable_contiguous_float32(_numpy(state.connector_tensor))
+    state.patch_tensor = None
+    state.connector_tensor = None
+    del returned, image_tensor, loaded_image
+    return DirectCalibrationCapture(
+        patch=patch,
+        connector=connector_output,
+        vision_calls=state.vision_calls,
+        connector_calls=state.connector_calls,
+    )
+
+
 def _record(
     *, image_id: str, relative_path: str, condition: str, state: native.CaptureState,
     tokens: list[list[int]], text: str, native_state: native.CaptureState,
@@ -478,97 +635,125 @@ def run_training_free_alignment_pilot(
 
     stage_start = time.perf_counter()
     elapsed: dict[str, float] = {}
-    config = native.load_anchor_config(tinyllava_config)
-    selection = select_pilot_rows(manifest)
-    repository = Path(repository_root).resolve(strict=True)
-    cache = Path(cache_root).resolve(strict=True)
-    bindings = raw.validate_dinov3_roots(
-        repository_root=repository, runtime_root=dinov3_runtime_root,
-        snapshot_root=dinov3_snapshot_root,
-    )
-    if not cache.is_dir() or cache.is_symlink():
-        raise AlignmentPilotError("cache root must be an existing non-link directory")
-    if not device.startswith("cuda"):
-        raise AlignmentPilotError("the Apple alignment pilot requires CUDA")
-    if dtype not in {"float16", "bfloat16", "float32"}:
-        raise AlignmentPilotError("dtype must be float16, bfloat16, or float32")
-    output = Path(output_dir)
-    if output.exists():
-        raise FileExistsError("output directory must be fresh")
-    paths = validate_selected_sources(selection, dataset_root)
+    with execution_context("input_validation"):
+        config = native.load_anchor_config(tinyllava_config)
+        selection = select_pilot_rows(manifest)
+        repository = Path(repository_root).resolve(strict=True)
+        cache = Path(cache_root).resolve(strict=True)
+        bindings = raw.validate_dinov3_roots(
+            repository_root=repository, runtime_root=dinov3_runtime_root,
+            snapshot_root=dinov3_snapshot_root,
+        )
+        if not cache.is_dir() or cache.is_symlink():
+            raise AlignmentPilotError("cache root must be an existing non-link directory")
+        if not device.startswith("cuda"):
+            raise AlignmentPilotError("the Apple alignment pilot requires CUDA")
+        if dtype not in {"float16", "bfloat16", "float32"}:
+            raise AlignmentPilotError("dtype must be float16, bfloat16, or float32")
+        output = Path(output_dir)
+        if output.exists():
+            raise FileExistsError("output directory must be fresh")
+        dataset = _validated_dataset_root(dataset_root)
+    selected_paths: list[Path] = []
+    for row in selection.all_rows:
+        with execution_context(
+            "input_validation", image_id=row.image_id, relative_path=row.relative_path
+        ):
+            selected_paths.append(_validate_selected_source(row, dataset))
+    paths = tuple(selected_paths)
     elapsed["input_validation_seconds"] = time.perf_counter() - stage_start
 
     import numpy as np
 
     decode_start = time.perf_counter()
-    pixels = np.concatenate([raw.canonical_rgb_nhwc(path) for path in paths], axis=0)
-    if pixels.shape != (12, 224, 224, 3):
-        raise AlignmentPilotError("canonical decoded batch shape mismatch")
+    decoded: list[Any] = []
+    for row, path in zip(selection.all_rows, paths, strict=True):
+        with execution_context(
+            "input_validation", image_id=row.image_id, relative_path=row.relative_path
+        ):
+            decoded.append(raw.canonical_rgb_nhwc(path))
+    with execution_context("input_validation"):
+        pixels = np.concatenate(decoded, axis=0)
+        if pixels.shape != (12, 224, 224, 3):
+            raise AlignmentPilotError("canonical decoded batch shape mismatch")
     elapsed["decode_seconds"] = time.perf_counter() - decode_start
     dino_start = time.perf_counter()
-    dino = _extract_dino_batch(
-        pixels, tuple(row.image_id for row in selection.all_rows), repository_root=repository,
-        runtime_root=bindings.runtime_root, snapshot_root=bindings.snapshot_root,
-    )
+    with execution_context("dinov3_extraction"):
+        dino = _extract_dino_batch(
+            pixels, tuple(row.image_id for row in selection.all_rows), repository_root=repository,
+            runtime_root=bindings.runtime_root, snapshot_root=bindings.snapshot_root,
+        )
     elapsed["dinov3_worker_seconds"] = time.perf_counter() - dino_start
 
-    try:
-        import torch
-        from safetensors.torch import save_file
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-    except (ImportError, ModuleNotFoundError) as exc:
-        raise AlignmentPilotError("required offline TinyLLaVA dependencies are unavailable") from exc
-    if not torch.cuda.is_available():
-        raise AlignmentPilotError("CUDA is unavailable")
-    torch_dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}[dtype]
-    common = {
-        "revision": config.revision, "cache_dir": str(cache),
-        "local_files_only": config.local_files_only, "trust_remote_code": config.trust_remote_code,
-    }
     model_start = time.perf_counter()
-    try:
-        model = AutoModelForCausalLM.from_pretrained(config.model_id, torch_dtype=torch_dtype, **common)
-        tokenizer = AutoTokenizer.from_pretrained(
-            config.model_id, revision=config.revision, cache_dir=str(cache),
-            local_files_only=config.local_files_only, trust_remote_code=config.trust_remote_code,
-            use_fast=False, model_max_length=model.config.tokenizer_model_max_length,
-            padding_side=model.config.tokenizer_padding_side,
+    with execution_context("tinyllava_load"):
+        try:
+            import torch
+            from safetensors.torch import save_file
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except (ImportError, ModuleNotFoundError) as exc:
+            raise AlignmentPilotError("required offline TinyLLaVA dependencies are unavailable") from exc
+        if not torch.cuda.is_available():
+            raise AlignmentPilotError("CUDA is unavailable")
+        torch_dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}[dtype]
+        common = {
+            "revision": config.revision, "cache_dir": str(cache),
+            "local_files_only": config.local_files_only, "trust_remote_code": config.trust_remote_code,
+        }
+        try:
+            model = AutoModelForCausalLM.from_pretrained(config.model_id, torch_dtype=torch_dtype, **common)
+            tokenizer = AutoTokenizer.from_pretrained(
+                config.model_id, revision=config.revision, cache_dir=str(cache),
+                local_files_only=config.local_files_only, trust_remote_code=config.trust_remote_code,
+                use_fast=False, model_max_length=model.config.tokenizer_model_max_length,
+                padding_side=model.config.tokenizer_padding_side,
+            )
+        except Exception as exc:
+            raise AlignmentPilotError("exact local TinyLLaVA model or tokenizer could not be loaded") from exc
+        model.to(device=device, dtype=torch_dtype)
+        model.eval()
+        for parameter in model.parameters():
+            parameter.requires_grad_(False)
+        if model.training or any(parameter.requires_grad for parameter in model.parameters()):
+            raise AlignmentPilotError("TinyLLaVA is not fully frozen")
+        vision_tower = model.get_vision_tower() if callable(getattr(model, "get_vision_tower", None)) else native._resolve_component(
+            model, label="vision tower", paths=("vision_tower", "model.vision_tower")
         )
-    except Exception as exc:
-        raise AlignmentPilotError("exact local TinyLLaVA model or tokenizer could not be loaded") from exc
-    model.to(device=device, dtype=torch_dtype)
-    model.eval()
-    for parameter in model.parameters():
-        parameter.requires_grad_(False)
-    if model.training or any(parameter.requires_grad for parameter in model.parameters()):
-        raise AlignmentPilotError("TinyLLaVA is not fully frozen")
-    vision_tower = model.get_vision_tower() if callable(getattr(model, "get_vision_tower", None)) else native._resolve_component(
-        model, label="vision tower", paths=("vision_tower", "model.vision_tower")
-    )
-    connector = native._resolve_component(
-        model, label="connector", paths=("connector", "model.connector", "mm_projector", "model.mm_projector")
-    )
-    runtime_config = native._resolve_runtime_config(model, vision_tower, config)
-    if any(parameter.requires_grad for parameter in vision_tower.parameters()):
-        raise AlignmentPilotError("TinyLLaVA vision tower is not frozen")
+        connector = native._resolve_component(
+            model, label="connector", paths=("connector", "model.connector", "mm_projector", "model.mm_projector")
+        )
+        runtime_config = native._resolve_runtime_config(model, vision_tower, config)
+        if any(parameter.requires_grad for parameter in vision_tower.parameters()):
+            raise AlignmentPilotError("TinyLLaVA vision tower is not frozen")
     elapsed["tinyllava_load_seconds"] = time.perf_counter() - model_start
 
     calibration_start = time.perf_counter()
     calibration_patches: list[Any] = []
     calibration_connectors: list[Any] = []
     with torch.inference_mode():
-        for path in paths[:8]:
-            state, _tokens, _text = _capture(model, vision_tower, connector, tokenizer, path, config, 1)
-            _validate_capture(state, dtype, injected=False)
-            calibration_patches.append(_numpy(state.patch_tensor)[0])
-            calibration_connectors.append(_numpy(state.connector_tensor)[0])
-    clip_train = np.stack(calibration_patches)
-    connector_train = np.stack(calibration_connectors)
-    moment = fit_moment_calibration(dino[:8], clip_train)
-    calibrated_train = apply_moment_calibration(dino[:8], moment)
-    linear = fit_orthogonal_procrustes(calibrated_train, clip_train)
-    patch_mean = clip_train.reshape(-1, 768).mean(axis=0, dtype=np.float64)
-    connector_mean = connector_train.reshape(-1, 1536).mean(axis=0, dtype=np.float64)
+        for row, path in zip(selection.calibration, paths[:8], strict=True):
+            with execution_context(
+                "calibration_native_capture",
+                image_id=row.image_id,
+                relative_path=row.relative_path,
+            ):
+                captured = capture_native_calibration_features(
+                    model=model,
+                    vision_tower=vision_tower,
+                    connector=connector,
+                    image_path=path,
+                    dtype=dtype,
+                )
+                calibration_patches.append(captured.patch[0])
+                calibration_connectors.append(captured.connector[0])
+    with execution_context("alignment_fit"):
+        clip_train = np.stack(calibration_patches)
+        connector_train = np.stack(calibration_connectors)
+        moment = fit_moment_calibration(dino[:8], clip_train)
+        calibrated_train = apply_moment_calibration(dino[:8], moment)
+        linear = fit_orthogonal_procrustes(calibrated_train, clip_train)
+        patch_mean = clip_train.reshape(-1, 768).mean(axis=0, dtype=np.float64)
+        connector_mean = connector_train.reshape(-1, 1536).mean(axis=0, dtype=np.float64)
     elapsed["calibration_and_fit_seconds"] = time.perf_counter() - calibration_start
 
     test_start = time.perf_counter()
@@ -577,127 +762,165 @@ def run_training_free_alignment_pilot(
     connector_outputs: dict[str, list[Any]] = {condition: [] for condition in CONDITIONS}
     with torch.inference_mode():
         for test_index, (row, path) in enumerate(zip(selection.test, paths[8:], strict=True)):
-            native_state, native_tokens, native_text = _capture(
-                model, vision_tower, connector, tokenizer, path, config, 32
-            )
-            _validate_capture(native_state, dtype, injected=False)
-            test_clip.append(_numpy(native_state.patch_tensor)[0])
+            with execution_context(
+                "held_out_generation",
+                image_id=row.image_id,
+                relative_path=row.relative_path,
+                condition="NATIVE",
+            ):
+                native_state, native_tokens, native_text = _capture(
+                    model, vision_tower, connector, tokenizer, path, config, 32
+                )
+                _validate_capture(native_state, dtype, injected=False)
+                test_clip.append(_numpy(native_state.patch_tensor)[0])
             states: dict[str, tuple[native.CaptureState, list[list[int]], str]] = {
                 "NATIVE": (native_state, native_tokens, native_text)
             }
-            transformed = {
-                "RAW": dino[8 + test_index],
-                "CALIBRATED": apply_moment_calibration(dino[8 + test_index], moment),
-                "LINEAR": apply_orthogonal_procrustes(
-                    apply_moment_calibration(dino[8 + test_index], moment), linear
-                ),
-            }
             for condition in CONDITIONS[1:]:
-                array = writable_contiguous_float32(transformed[condition])
-                tensor = torch.from_numpy(array)
-                injection = native.ReplayInjection(
-                    model, tensor, connector, prepare_patch=native._prepare_for_connector
-                )
-                with injection:
-                    state, tokens, text = _capture(
-                        model, vision_tower, connector, tokenizer, path, config, 32
+                with execution_context(
+                    "held_out_generation",
+                    image_id=row.image_id,
+                    relative_path=row.relative_path,
+                    condition=condition,
+                ):
+                    if condition == "RAW":
+                        transformed = dino[8 + test_index]
+                    elif condition == "CALIBRATED":
+                        transformed = apply_moment_calibration(dino[8 + test_index], moment)
+                    else:
+                        transformed = apply_orthogonal_procrustes(
+                            apply_moment_calibration(dino[8 + test_index], moment), linear
+                        )
+                    array = writable_contiguous_float32(transformed)
+                    tensor = torch.from_numpy(array)
+                    injection = native.ReplayInjection(
+                        model, tensor, connector, prepare_patch=native._prepare_for_connector
                     )
-                _validate_capture(state, dtype, injected=True)
-                if injection.invocations != 1 or not injection.restored:
-                    raise AlignmentPilotError("injection did not run once and restore encode_images")
-                states[condition] = (state, tokens, text)
+                    with injection:
+                        state, tokens, text = _capture(
+                            model, vision_tower, connector, tokenizer, path, config, 32
+                        )
+                    _validate_capture(state, dtype, injected=True)
+                    if injection.invocations != 1 or not injection.restored:
+                        raise AlignmentPilotError("injection did not run once and restore encode_images")
+                    states[condition] = (state, tokens, text)
             for condition in CONDITIONS:
-                state, tokens, text = states[condition]
-                connector_outputs[condition].append(_numpy(state.connector_tensor)[0])
-                records.append(_record(
-                    image_id=row.image_id, relative_path=row.relative_path, condition=condition,
-                    state=state, tokens=tokens, text=text, native_state=native_state,
-                    native_tokens=native_tokens, native_text=native_text,
-                    patch_mean=patch_mean, connector_mean=connector_mean,
-                ))
+                with execution_context(
+                    "held_out_generation",
+                    image_id=row.image_id,
+                    relative_path=row.relative_path,
+                    condition=condition,
+                ):
+                    state, tokens, text = states[condition]
+                    connector_outputs[condition].append(_numpy(state.connector_tensor)[0])
+                    records.append(_record(
+                        image_id=row.image_id, relative_path=row.relative_path, condition=condition,
+                        state=state, tokens=tokens, text=text, native_state=native_state,
+                        native_tokens=native_tokens, native_text=native_text,
+                        patch_mean=patch_mean, connector_mean=connector_mean,
+                    ))
     elapsed["held_out_generation_seconds"] = time.perf_counter() - test_start
-    if len(records) != 16:
-        raise AlignmentPilotError("held-out generation count is not exactly 16")
-    unload_start = time.perf_counter()
-    del model, vision_tower, connector, tokenizer
-    torch.cuda.empty_cache()
-    elapsed["tinyllava_unload_seconds"] = time.perf_counter() - unload_start
+    with execution_context("held_out_generation"):
+        if len(records) != 16:
+            raise AlignmentPilotError("held-out generation count is not exactly 16")
+        unload_start = time.perf_counter()
+        del model, vision_tower, connector, tokenizer
+        torch.cuda.empty_cache()
+        elapsed["tinyllava_unload_seconds"] = time.perf_counter() - unload_start
 
     publish_start = time.perf_counter()
-    summary = aggregate_metrics(records)
-    output.mkdir(parents=True, exist_ok=False)
-    _write_csv(output / "per_image.csv", records)
-    _write_csv(output / "summary.csv", summary)
-    save_file({
-        "calibration_clip_block11": torch.from_numpy(writable_contiguous_float32(clip_train)),
-        "calibration_dinov3_block11": torch.from_numpy(writable_contiguous_float32(dino[:8])),
-        "test_clip_block11": torch.from_numpy(writable_contiguous_float32(np.stack(test_clip))),
-        "test_dinov3_block11": torch.from_numpy(writable_contiguous_float32(dino[8:])),
-    }, str(output / "paired_patch_features.safetensors"))
-    save_file({
-        "moment_scale": torch.from_numpy(writable_contiguous_float32(moment.scale)),
-        "moment_bias": torch.from_numpy(writable_contiguous_float32(moment.bias)),
-        "calibrated_train_mean": torch.from_numpy(writable_contiguous_float32(linear.calibrated_train_mean)),
-        "clip_train_mean": torch.from_numpy(writable_contiguous_float32(moment.clip_train_mean)),
-        "clip_train_std": torch.from_numpy(writable_contiguous_float32(moment.clip_train_std)),
-        "dinov3_train_mean": torch.from_numpy(writable_contiguous_float32(moment.dinov3_train_mean)),
-        "dinov3_train_std": torch.from_numpy(writable_contiguous_float32(moment.dinov3_train_std)),
-        "procrustes_rotation": torch.from_numpy(writable_contiguous_float32(linear.rotation)),
-    }, str(output / "alignment_parameters.safetensors"))
-    save_file({
-        condition.lower(): torch.from_numpy(writable_contiguous_float32(np.stack(connector_outputs[condition])))
-        for condition in CONDITIONS
-    }, str(output / "test_connector_outputs.safetensors"))
-    elapsed["artifact_publication_seconds"] = time.perf_counter() - publish_start
-    elapsed["total_seconds"] = time.perf_counter() - stage_start
-    artifact_inventory = {}
-    for name in ARTIFACT_NAMES[1:]:
-        artifact = output / name
-        artifact_inventory[name] = {"bytes": artifact.stat().st_size, "sha256": native.sha256_file(artifact)}
-    result = build_result(
-        repository_commit=_repository_commit(repository),
-        tinyllava={"model_id": config.model_id, "revision": config.revision, "feature_tap": "hidden_states[-2]", "runtime_config": runtime_config},
-        dinov3={"model_id": raw.DINO_MODEL_ID, "revision": raw.DINO_REVISION, "feature_tap": "hidden_states[11]", "special_tokens_removed": "CLS 1 + register tokens 4"},
-        prompt=PROMPT,
-        generation={"calibration_max_new_tokens": 1, "test_max_new_tokens": 32, "num_beams": 1, "do_sample": False, "top_p": None, "temperature": 0},
-        split_policy="first 8 train and first 4 test by selection_index; image-level partition before patch flattening",
-        calibration_images=[asdict(row) for row in selection.calibration],
-        test_images=[asdict(row) for row in selection.test],
-        conditions=list(CONDITIONS),
-        transformations={
-            "CALIBRATED": "dimension-wise population-moment affine fit, float64, denominator floor 1e-6",
-            "LINEAR": "orthogonal Procrustes after CALIBRATED, float64 SVD, R=U@Vt, reflection allowed",
-        },
-        parameter_contract={
-            "moment_scale": {"shape": [768], "dtype": "float32"},
-            "moment_bias": {"shape": [768], "dtype": "float32"},
-            "calibrated_train_mean": {"shape": [768], "dtype": "float32"},
-            "clip_train_mean": {"shape": [768], "dtype": "float32"},
-            "clip_train_std": {"shape": [768], "dtype": "float32"},
-            "dinov3_train_mean": {"shape": [768], "dtype": "float32"},
-            "dinov3_train_std": {"shape": [768], "dtype": "float32"},
-            "procrustes_rotation": {"shape": [768, 768], "dtype": "float32"},
-        },
-        per_image=records,
-        aggregate_metrics=summary,
-        runtime_call_counts={"dinov3_batch_extractions": 1, "tinyllava_model_loads": 1, "calibration_native_calls": 8, "test_generation_calls": 16},
-        artifacts=artifact_inventory,
-        elapsed_seconds=elapsed,
-    )
-    native._write_new(output / "result.json", native.canonical_json_bytes(result))
+    with execution_context("artifact_publication"):
+        summary = aggregate_metrics(records)
+        output.mkdir(parents=True, exist_ok=False)
+        _write_csv(output / "per_image.csv", records)
+        _write_csv(output / "summary.csv", summary)
+        save_file({
+            "calibration_clip_block11": torch.from_numpy(writable_contiguous_float32(clip_train)),
+            "calibration_dinov3_block11": torch.from_numpy(writable_contiguous_float32(dino[:8])),
+            "test_clip_block11": torch.from_numpy(writable_contiguous_float32(np.stack(test_clip))),
+            "test_dinov3_block11": torch.from_numpy(writable_contiguous_float32(dino[8:])),
+        }, str(output / "paired_patch_features.safetensors"))
+        save_file({
+            "moment_scale": torch.from_numpy(writable_contiguous_float32(moment.scale)),
+            "moment_bias": torch.from_numpy(writable_contiguous_float32(moment.bias)),
+            "calibrated_train_mean": torch.from_numpy(writable_contiguous_float32(linear.calibrated_train_mean)),
+            "clip_train_mean": torch.from_numpy(writable_contiguous_float32(moment.clip_train_mean)),
+            "clip_train_std": torch.from_numpy(writable_contiguous_float32(moment.clip_train_std)),
+            "dinov3_train_mean": torch.from_numpy(writable_contiguous_float32(moment.dinov3_train_mean)),
+            "dinov3_train_std": torch.from_numpy(writable_contiguous_float32(moment.dinov3_train_std)),
+            "procrustes_rotation": torch.from_numpy(writable_contiguous_float32(linear.rotation)),
+        }, str(output / "alignment_parameters.safetensors"))
+        save_file({
+            condition.lower(): torch.from_numpy(writable_contiguous_float32(np.stack(connector_outputs[condition])))
+            for condition in CONDITIONS
+        }, str(output / "test_connector_outputs.safetensors"))
+        elapsed["artifact_publication_seconds"] = time.perf_counter() - publish_start
+        elapsed["total_seconds"] = time.perf_counter() - stage_start
+        artifact_inventory = {}
+        for name in ARTIFACT_NAMES[1:]:
+            artifact = output / name
+            artifact_inventory[name] = {"bytes": artifact.stat().st_size, "sha256": native.sha256_file(artifact)}
+        result = build_result(
+            repository_commit=_repository_commit(repository),
+            tinyllava={"model_id": config.model_id, "revision": config.revision, "feature_tap": "hidden_states[-2]", "runtime_config": runtime_config},
+            dinov3={"model_id": raw.DINO_MODEL_ID, "revision": raw.DINO_REVISION, "feature_tap": "hidden_states[11]", "special_tokens_removed": "CLS 1 + register tokens 4"},
+            prompt=PROMPT,
+            generation={"test_max_new_tokens": 32, "num_beams": 1, "do_sample": False, "top_p": None, "temperature": 0},
+            calibration_capture={
+                "method": "pinned runtime load_image -> process_images -> model.encode_images",
+                "language_generation": False,
+            },
+            split_policy="first 8 train and first 4 test by selection_index; image-level partition before patch flattening",
+            calibration_images=[asdict(row) for row in selection.calibration],
+            test_images=[asdict(row) for row in selection.test],
+            conditions=list(CONDITIONS),
+            transformations={
+                "CALIBRATED": "dimension-wise population-moment affine fit, float64, denominator floor 1e-6",
+                "LINEAR": "orthogonal Procrustes after CALIBRATED, float64 SVD, R=U@Vt, reflection allowed",
+            },
+            parameter_contract={
+                "moment_scale": {"shape": [768], "dtype": "float32"},
+                "moment_bias": {"shape": [768], "dtype": "float32"},
+                "calibrated_train_mean": {"shape": [768], "dtype": "float32"},
+                "clip_train_mean": {"shape": [768], "dtype": "float32"},
+                "clip_train_std": {"shape": [768], "dtype": "float32"},
+                "dinov3_train_mean": {"shape": [768], "dtype": "float32"},
+                "dinov3_train_std": {"shape": [768], "dtype": "float32"},
+                "procrustes_rotation": {"shape": [768, 768], "dtype": "float32"},
+            },
+            per_image=records,
+            aggregate_metrics=summary,
+            runtime_call_counts={
+                "dinov3_batch_extractions": 1,
+                "tinyllava_model_loads": 1,
+                "calibration_native_feature_calls": 8,
+                "calibration_generation_calls": 0,
+                "test_generation_calls": 16,
+            },
+            artifacts=artifact_inventory,
+            elapsed_seconds=elapsed,
+        )
+        native._write_new(output / "result.json", native.canonical_json_bytes(result))
     return result
 
 
-def write_failure_result(output_dir: str | Path, *, stage: str, error: BaseException) -> Path | None:
+def write_failure_result(output_dir: str | Path, *, error: BaseException) -> Path | None:
     """Write bounded structured failure evidence without overwriting prior output."""
 
     try:
         output = Path(output_dir)
         output.mkdir(parents=True, exist_ok=True)
         path = output / "result.json"
+        context = error if isinstance(error, PilotStageError) else None
         native._write_new(path, native.canonical_json_bytes({
             "schema_id": SCHEMA_ID, "status": "BLOCKED_TRAINING_FREE_ALIGNMENT_PILOT",
-            "stage": stage, "error_type": type(error).__name__, "message": str(error),
+            "stage": context.stage if context is not None else "unclassified",
+            "image_id": context.image_id if context is not None else None,
+            "relative_path": context.relative_path if context is not None else None,
+            "condition": context.condition if context is not None else None,
+            "error_type": type(error).__name__,
+            "message": _bounded_exception_message(error),
+            "cause_chain": bounded_cause_chain(error),
         }))
         return path
     except Exception:

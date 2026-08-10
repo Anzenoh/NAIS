@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from pathlib import Path
 
 
@@ -46,8 +47,15 @@ def main(argv: list[str] | None = None) -> int:
             dtype=args.dtype,
         )
     except Exception as exc:
-        evidence = write_failure_result(args.output_dir, stage="pilot", error=exc)
-        print(f"BLOCKED_TRAINING_FREE_ALIGNMENT_PILOT error={type(exc).__name__} evidence={evidence}")
+        traceback.print_exc()
+        evidence = write_failure_result(args.output_dir, error=exc)
+        stage = getattr(exc, "stage", "unclassified")
+        image_id = getattr(exc, "image_id", None)
+        condition = getattr(exc, "condition", None)
+        print(
+            "BLOCKED_TRAINING_FREE_ALIGNMENT_PILOT "
+            f"stage={stage} image_id={image_id} condition={condition} evidence={evidence}"
+        )
         return 1
     print(f"{result['status']} result={Path(args.output_dir) / 'result.json'}")
     return 0
