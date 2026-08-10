@@ -1,14 +1,14 @@
-# VEA-P2-T001B-R2 Apple snapshot materialization and raw-injection smoke
+# VEA-P2-T001B-R3 Apple worker-response raw-injection smoke
 
-Run this once after independent review supplies the reviewed R2 commit. It uses
-the existing offline Hugging Face cache, publishes the exact contract snapshot,
-and then runs one R1 raw-injection smoke. It never downloads or installs.
+Run this once after independent review supplies the reviewed R3 commit. It uses
+the existing offline Hugging Face cache, requires idempotent reuse of the exact
+contract snapshot, and then runs one raw-injection smoke. It never downloads or installs.
 
 ```bash
 set -euo pipefail
-TASK_BRANCH='codex/vea-p2-t001b-r2-coherent-snapshot'
+TASK_BRANCH='codex/vea-p2-t001b-r3-apple-worker-response'
 TASK_COMMIT_SHA='<REVIEWED_TASK_COMMIT_SHA>'
-REPO="/home/chltjsdh/vea/p2_repos/vea-p2-t001b-r2-$(date -u +%Y%m%dT%H%M%SZ)"
+REPO="/home/chltjsdh/vea/p2_repos/vea-p2-t001b-r3-$(date -u +%Y%m%dT%H%M%SZ)"
 MAIN_PY='/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3'
 DINO_RUNTIME_ROOT='/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated'
 OVERLAY='/home/chltjsdh/vea/runtime/p2_tinyllava_overlay/site-packages'
@@ -32,8 +32,8 @@ child worker processes. Every failure drops into a live tmux parent shell.
 ```bash
 set -euo pipefail
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-SESSION="vea-p2-t001b-r2-${STAMP}"
-OUTPUT="/home/chltjsdh/vea/p2_outputs/vea-p2-t001b-r2-${STAMP}"
+SESSION="vea-p2-t001b-r3-${STAMP}"
+OUTPUT="/home/chltjsdh/vea/p2_outputs/vea-p2-t001b-r3-${STAMP}"
 LOG="${OUTPUT}.log"
 MATERIALIZE_LOG="${OUTPUT}.materialize.log"
 CONTROLLER="${OUTPUT}.controller.sh"
@@ -88,6 +88,9 @@ if ! run_child "$MAIN_PY" "$REPO/scripts/materialize_dinov3_snapshot_from_hf_cac
   --runtime-root "$DINO_RUNTIME_ROOT" > "$MATERIALIZE_LOG" 2>&1
 then cat "$MATERIALIZE_LOG"; hold 'snapshot materialization failed'; fi
 cat "$MATERIALIZE_LOG"
+if ! grep -Fxq 'DINOV3_CONTRACT_SNAPSHOT_ALREADY_VALID' "$MATERIALIZE_LOG"; then
+  hold 'existing contract snapshot was not reused through ALREADY_VALID'
+fi
 
 if ! "$MAIN_PY" "$REPO/scripts/materialize_dinov3_snapshot_from_hf_cache.py" verify \
   --repository-root "$REPO" \

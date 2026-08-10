@@ -238,9 +238,9 @@ EXPECTED_GEOMETRY = {
 }
 EXPECTED_RUNTIME = {
     "dinov3": {
-        "extractor_profile": {"path": "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json", "sha256": "b0d8c3fee92a783aa873efedcadab68c48bcde8aac458d767bb5fa77cac1cb8d"},
+        "extractor_profile": {"path": "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json", "sha256": "771fba9fa683065d628109856385405e14d87cdaea38c5b448d0aba8fb6508bc"},
         "interpreter": "/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated/bin/python3",
-        "profile": {"path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json", "profile_id": "dinov3-apple-cuda-fp32-v1", "sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223"},
+        "profile": {"path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json", "profile_id": "dinov3-apple-cuda-fp32-v1", "sha256": "51af286a73d987ba34f8c5f54b96b91083191f7e51d62d6b02b7503459cd717f"},
     },
     "main": {
         "interpreter": "/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3",
@@ -248,7 +248,7 @@ EXPECTED_RUNTIME = {
     },
 }
 EXPECTED_SOURCE_BINDINGS = (
-    {"path": "scripts/dinov3_extraction_worker.py", "sha256": "d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f"},
+    {"path": "scripts/dinov3_extraction_worker.py", "sha256": "152a75c7f26ba1d56c0c3e829442109b687f4ee2e09157773e4c4279a544f3f8"},
     {"path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py", "sha256": "95fd65746e3c15373cf7a035ccb121307881b72db82622c870f396c7df7e15fe"},
     {"path": "src/vision_encoder_alignment/extractors/clip.py", "sha256": "0ec0980c9761a73597244b03116de093c71b568cc0d8755951821b4f448eb82d"},
     {"path": "src/vision_encoder_alignment/extractors/dinov3.py", "sha256": "dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82"},

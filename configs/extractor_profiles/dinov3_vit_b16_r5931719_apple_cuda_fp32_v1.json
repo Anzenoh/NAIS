@@ -53,7 +53,7 @@
     "persistent_freeze_sha256": "995687ed934c0a94b52a040af048f87bc8de4e5089475f70565ad37f1f33ecd9",
     "persistent_runtime_manifest_sha256": "5276f28e4f9a7416a6a10be5a029a793052bbc06f5c71e2360b6b983ffa60de4",
     "registry_sha256": "2c75cc26a27febc633b2bad479779327f35abbf36160df2805f43a4e33f48244",
-    "runtime_profile_sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223",
+    "runtime_profile_sha256": "51af286a73d987ba34f8c5f54b96b91083191f7e51d62d6b02b7503459cd717f",
     "semantic_evidence_sha256": "8308c0ca73a3cb31fcfcc1333abe4ad904ea3e96bb45e83662281630b53e0311",
     "semantic_profile_sha256": "3824963e6d3c7d6ecb8a83c971533cdbec853d4a3b653f151c98959049411df8",
     "snapshot_profile_sha256": "df90c58f2fd603b1e7979576270e67924bd84594eb08ad337edc3fdcdd2b80ac"
@@ -146,7 +146,7 @@
     {
       "path": "scripts/dinov3_extraction_worker.py",
       "role": "isolated_worker",
-      "sha256": "d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f"
+      "sha256": "152a75c7f26ba1d56c0c3e829442109b687f4ee2e09157773e4c4279a544f3f8"
     },
     {
       "path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py",
@@ -235,7 +235,7 @@
     "path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json",
     "profile_id": "dinov3-apple-cuda-fp32-v1",
     "selector": "dinov3_apple_cuda_fp32_v1",
-    "sha256": "d296bbbcf747d3d6d8c0a6ed9f48809cee058af4a6009b0342ab4ca55bab4223"
+    "sha256": "51af286a73d987ba34f8c5f54b96b91083191f7e51d62d6b02b7503459cd717f"
   },
   "schema_id": "vea.dinov3_apple_extractor_profile.v1",
   "sources": {

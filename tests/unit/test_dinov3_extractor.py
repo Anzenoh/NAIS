@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from dataclasses import FrozenInstanceError
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -31,14 +32,22 @@ import vision_encoder_alignment.extractors.dinov3 as dinov3
 
 
 ROOT = Path(__file__).resolve().parents[2]
+WORKER_SPEC = importlib.util.spec_from_file_location(
+    "p2_r3_dinov3_extraction_worker",
+    ROOT / "scripts/dinov3_extraction_worker.py",
+)
+assert WORKER_SPEC is not None and WORKER_SPEC.loader is not None
+worker = importlib.util.module_from_spec(WORKER_SPEC)
+sys.modules[WORKER_SPEC.name] = worker
+WORKER_SPEC.loader.exec_module(worker)
 LIVE_PROFILE = (
     ROOT / "configs/extractor_profiles/dinov3_vit_b16_r5931719_isolated_v0.json"
 )
 LIVE_PROFILE_SHA256 = (
-    "60d0d0d7d37c6b4d47997e09619204f9e1eddb96118d5ee3528d9e6fcd5fe829"
+    "4ade57fb0653a01ca769f726fc8612e0195f27bf36cd4dd504fe44feb5c809a7"
 )
 CANDIDATE_PROFILE_SHA256 = (
-    "60d0d0d7d37c6b4d47997e09619204f9e1eddb96118d5ee3528d9e6fcd5fe829"
+    "4ade57fb0653a01ca769f726fc8612e0195f27bf36cd4dd504fe44feb5c809a7"
 )
 REGISTRY_PIN_PROFILE_SHA256 = (
     "3281b94e188230c521e674cae301768a335dd635e7401b51acafeae053a137bc"
@@ -433,6 +442,74 @@ def test_response_validates_exact_contract(
         profile=profile,
     )
     assert response.document.forward_count == 1
+
+
+def test_apple_response_identities_use_profile_without_runtime_manifest(
+    dinov3_candidate_profile_path: Path,
+) -> None:
+    profile = load_dinov3_extractor_profile(dinov3_candidate_profile_path)
+    identities = worker._persistent_response_identities(
+        execution_selector=worker.APPLE_EXECUTION_SELECTOR,
+        profile=profile,
+        runtime_manifest=None,
+    )
+    assert identities == {
+        "persistent_freeze_sha256": profile.identities.persistent_freeze_sha256,
+        "persistent_runtime_manifest_sha256": (
+            profile.identities.persistent_runtime_manifest_sha256
+        ),
+    }
+
+
+def test_legacy_response_identities_use_validated_runtime_manifest(
+    dinov3_candidate_profile_path: Path,
+) -> None:
+    profile = load_dinov3_extractor_profile(dinov3_candidate_profile_path)
+
+    class RuntimeManifest:
+        candidate_freeze_sha256 = "a" * 64
+        source_sha256 = "b" * 64
+
+    identities = worker._persistent_response_identities(
+        execution_selector=worker.LEGACY_EXECUTION_SELECTOR,
+        profile=profile,
+        runtime_manifest=RuntimeManifest(),
+    )
+    assert identities == {
+        "persistent_freeze_sha256": "a" * 64,
+        "persistent_runtime_manifest_sha256": "b" * 64,
+    }
+
+
+def test_legacy_response_identities_reject_missing_runtime_manifest(
+    dinov3_candidate_profile_path: Path,
+) -> None:
+    profile = load_dinov3_extractor_profile(dinov3_candidate_profile_path)
+    with pytest.raises(worker.WorkerValidationError, match="validated runtime manifest"):
+        worker._persistent_response_identities(
+            execution_selector=worker.LEGACY_EXECUTION_SELECTOR,
+            profile=profile,
+            runtime_manifest=None,
+        )
+
+
+def test_worker_identity_mapping_is_accepted_by_response_validator(
+    dinov3_candidate_profile_path: Path,
+) -> None:
+    request = _request(dinov3_candidate_profile_path)
+    profile = load_dinov3_extractor_profile(dinov3_candidate_profile_path)
+    value = _response(dinov3_candidate_profile_path, request)
+    value["identities"].update(  # type: ignore[union-attr]
+        worker._persistent_response_identities(
+            execution_selector=worker.APPLE_EXECUTION_SELECTOR,
+            profile=profile,
+            runtime_manifest=None,
+        )
+    )
+    response = validate_dinov3_extraction_response(value, request=request, profile=profile)
+    assert response.document.identities.persistent_freeze_sha256 == (
+        profile.identities.persistent_freeze_sha256
+    )
 
 
 @pytest.mark.parametrize(

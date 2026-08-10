@@ -517,6 +517,34 @@ def _write_response(path: Path, value: Mapping[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _persistent_response_identities(
+    *,
+    execution_selector: str,
+    profile: Any,
+    runtime_manifest: Any | None,
+) -> dict[str, str]:
+    """Resolve persistent response identities for the selected runtime lane."""
+
+    if execution_selector == APPLE_EXECUTION_SELECTOR:
+        return {
+            "persistent_freeze_sha256": profile.identities.persistent_freeze_sha256,
+            "persistent_runtime_manifest_sha256": (
+                profile.identities.persistent_runtime_manifest_sha256
+            ),
+        }
+    if execution_selector != LEGACY_EXECUTION_SELECTOR:
+        raise WorkerValidationError("unknown execution selector")
+    if runtime_manifest is None:
+        raise WorkerValidationError("legacy execution requires a validated runtime manifest")
+    try:
+        return {
+            "persistent_freeze_sha256": runtime_manifest.candidate_freeze_sha256,
+            "persistent_runtime_manifest_sha256": runtime_manifest.source_sha256,
+        }
+    except AttributeError as exc:
+        raise WorkerValidationError("legacy runtime manifest identity is unavailable") from exc
+
+
 def run_worker(
     *,
     extractor_profile_path: Path,
@@ -593,6 +621,7 @@ def run_worker(
             persistent_runtime_root=runtime_root,
         )
         identities = profile.identities
+        runtime_manifest: Any | None = None
         if execution_selector == APPLE_EXECUTION_SELECTOR:
             from vision_encoder_alignment.production_runtime_contract import (
                 DINOV3_LANE_ID,
@@ -657,6 +686,11 @@ def run_worker(
         for key, actual in actual_identities.items():
             if identities[key] != actual:
                 raise WorkerValidationError(f"live identity mismatch: {key}")
+        persistent_response_identities = _persistent_response_identities(
+            execution_selector=execution_selector,
+            profile=profile,
+            runtime_manifest=runtime_manifest,
+        )
         input_path = _workspace_path(
             workspace, request.workspace_relative_input_path, "input", must_exist=True
         )
@@ -762,8 +796,7 @@ def run_worker(
             "identities": {
                 "external_snapshot_manifest_sha256": snapshot_manifest.source_sha256,
                 "extractor_profile_sha256": profile.sha256,
-                "persistent_freeze_sha256": runtime_manifest.candidate_freeze_sha256,
-                "persistent_runtime_manifest_sha256": runtime_manifest.source_sha256,
+                **persistent_response_identities,
                 "runtime_profile_sha256": runtime_profile.source_sha256,
                 "snapshot_profile_sha256": snapshot_profile.source_sha256,
             },

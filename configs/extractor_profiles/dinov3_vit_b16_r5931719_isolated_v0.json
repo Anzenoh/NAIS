@@ -142,7 +142,7 @@
     {
       "path": "scripts/dinov3_extraction_worker.py",
       "role": "isolated_worker",
-      "sha256": "d62295b174b980482a9ba6dfbcea9957dec038816fdf2b88dff244404646850f"
+      "sha256": "152a75c7f26ba1d56c0c3e829442109b687f4ee2e09157773e4c4279a544f3f8"
     },
     {
       "path": "src/vision_encoder_alignment/dinov3_extraction_boundary.py",
