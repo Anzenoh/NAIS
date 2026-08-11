@@ -1,0 +1,93 @@
+{
+  "schema_id": "vea.p2.universal_anchor_transport_config.v0",
+  "manifest": {
+    "path": "data/manifests/p1_1000.jsonl",
+    "sha256": "1819bbc6235dd4805d71642e63e73112ce2e918135ec94f46493077698be92da",
+    "row_count": 1000
+  },
+  "source_encoder_order": ["TARGET_CLIP", "SIGLIP2", "DINOV3"],
+  "encoders": {
+    "TARGET_CLIP": {
+      "model_id": "openai/clip-vit-base-patch16",
+      "revision": "57c216476eefef5ab752ec549e440a49ae4ae5f3",
+      "profile_path": "configs/extraction_profiles/p1_1000_apple_fp32_v0.json",
+      "profile_sha256": "026b03c45f4747b11a47ffb1db597c4e5d74e2897527d21d5a17b7afca994f7e",
+      "extractor_source": "src/vision_encoder_alignment/extractors/clip.py",
+      "extractor_sha256": "0ec0980c9761a73597244b03116de093c71b568cc0d8755951821b4f448eb82d",
+      "tap": "hidden_states[-2]",
+      "tap_name": "block_11",
+      "preprocessing": "TinyLLaVA pinned native load_image/process_images",
+      "special_token_policy": "clip_cls1_prefix_verified_runtime_v1",
+      "patch_shape": [196, 768]
+    },
+    "SIGLIP2": {
+      "model_id": "google/siglip2-base-patch16-224",
+      "revision": "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2",
+      "profile_path": "configs/extraction_profiles/p1_1000_apple_fp32_v0.json",
+      "profile_sha256": "026b03c45f4747b11a47ffb1db597c4e5d74e2897527d21d5a17b7afca994f7e",
+      "runtime_profile_path": "configs/runtime_profiles/p1_apple_main_cuda_fp32_v0.json",
+      "runtime_profile_sha256": "7e578ea3451e595e243e0e6a39058b0eb12a8641ce433bc60b6039b23e2cbdf5",
+      "extractor_source": "src/vision_encoder_alignment/extractors/siglip2.py",
+      "extractor_sha256": "0267d9eaa51d6c6b686339d9d9e700f782d2ec3b5c16c20d3df16e8fa17cfd5e",
+      "tap": "final pre-projection normalized vision patch",
+      "tap_name": "final_norm",
+      "preprocessing": "canonical_224_center_crop_v0 then SigLIP numeric normalization",
+      "special_token_policy": "siglip_no_special_tokens_verified_runtime_v1",
+      "patch_shape": [196, 768]
+    },
+    "DINOV3": {
+      "model_id": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+      "revision": "5931719e67bbdb9737e363e781fb0c67687896bc",
+      "profile_path": "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json",
+      "profile_sha256": "771fba9fa683065d628109856385405e14d87cdaea38c5b448d0aba8fb6508bc",
+      "runtime_profile_path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json",
+      "runtime_profile_sha256": "51af286a73d987ba34f8c5f54b96b91083191f7e51d62d6b02b7503459cd717f",
+      "snapshot_profile_path": "configs/model_snapshots/dinov3_vit_b16_r5931719_v0.json",
+      "snapshot_profile_sha256": "df90c58f2fd603b1e7979576270e67924bd84594eb08ad337edc3fdcdd2b80ac",
+      "extractor_source": "src/vision_encoder_alignment/extractors/dinov3.py",
+      "extractor_sha256": "dc5fc7c2040e9c42cecf23d9ebcebd1430dd7486739d9c2df0d9d534b1124a82",
+      "injection_boundary_source": "src/vision_encoder_alignment/vlm_compat/dinov3_raw_injection.py",
+      "injection_boundary_sha256": "dbda7066fa2e340ecfc13be4a54e5f9af6ad41ffff3a46d71408feffe71b7caa",
+      "tap": "hidden_states[11]",
+      "tap_name": "block_11",
+      "preprocessing": "canonical_224_center_crop_v0 then manual ImageNet FP32 normalization",
+      "special_token_policy": "dinov3_cls1_register4_prefix_verified_runtime_v1",
+      "patch_shape": [196, 768]
+    }
+  },
+  "target_vlm": {
+    "config_path": "configs/vlm_compat/tinyllava_openelm_clip_anchor_v0.json",
+    "config_sha256": "78242f4062fe748826aad0b51ae50ddce1c4bcbb06143396e87d9a862585ac8a",
+    "native_capture_source": "src/vision_encoder_alignment/vlm_compat/training_free_alignment_pilot.py",
+    "native_capture_sha256": "b9ea721b2720466400cbd66dfd4e0ef751cc292e7fbcc6225f8e87f9d9139eab",
+    "native_replay_source": "src/vision_encoder_alignment/vlm_compat/tinyllava_native_replay.py",
+    "native_replay_sha256": "ee4f4b98d9bf9563a1cebc639b6079107fdf1688f1b5b9bb2e993b9ad60ec00b",
+    "model_id": "jiajunlong/TinyLLaVA-OpenELM-450M-CLIP-0.55B",
+    "revision": "0bff7b92d5b9ef4520c61b1f7872d7d1e13537a6",
+    "vision_feature": "hidden_states[-2] patch-only",
+    "connector_input_shape": [196, 768],
+    "connector_output_shape": [196, 1536],
+    "frozen": true
+  },
+  "anchor_count": 128,
+  "feature_chunk_size": 16,
+  "condition_order": ["RAW", "SAMPLE_RMS", "GLOBAL_1NN", "GLOBAL_TOP8", "POSITIONAL_1NN", "POSITIONAL_TOP8"],
+  "top_k": 8,
+  "softmax_temperature": 1.0,
+  "rms_epsilon": 1e-6,
+  "prompt": "What is shown in this image? Answer briefly.",
+  "generation": {
+    "max_new_tokens": 32,
+    "num_beams": 1,
+    "do_sample": false,
+    "top_p": null,
+    "temperature": 0
+  },
+  "runtime_dtype": "float16",
+  "stored_feature_dtype": "float32",
+  "similarity_metric_dtype": "float64",
+  "resume_schema": "vea.p2.t001d.resume.v1",
+  "artifact_schema": "vea.p2.t001d.unit_artifact.v1",
+  "plan_schema": "vea.p2.t001d.run_plan.v1",
+  "result_schema": "vea.p2.t001d.resumable_anchor_transport.v1"
+}
