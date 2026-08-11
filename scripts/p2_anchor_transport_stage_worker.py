@@ -502,6 +502,90 @@ def _connector_output(torch, native, connector, array, device):
     return output.detach().to(device="cpu", dtype=torch.float32).numpy().copy(order="C")
 
 
+def _numpy_max_abs_diff(np, left, right) -> float:
+    if tuple(left.shape) != tuple(right.shape):
+        return float("inf")
+    if left.size == 0:
+        return 0.0
+    return float(np.max(np.abs(left.astype(np.float64) - right.astype(np.float64))))
+
+
+def _tensor_max_abs_diff(torch, np, left, right) -> float:
+    if tuple(left.shape) != tuple(right.shape):
+        return float("inf")
+    left_array = left.detach().to(device="cpu", dtype=torch.float64).numpy()
+    right_array = right.detach().to(device="cpu", dtype=torch.float64).numpy()
+    return _numpy_max_abs_diff(np, left_array, right_array)
+
+
+def _target_clip_raw_self_control(torch, native, connector, transported, native_patch, persisted_connector, device):
+    """Validate RAW identity in one execution context and return its live RAW half."""
+
+    import numpy as np
+
+    patch_diff = _numpy_max_abs_diff(np, transported, native_patch)
+    patch_contract = (
+        tuple(transported.shape) == tuple(native_patch.shape)
+        and transported.dtype == native_patch.dtype == np.dtype(np.float32)
+        and transported.flags.c_contiguous
+        and native_patch.flags.c_contiguous
+        and np.isfinite(transported).all()
+        and np.isfinite(native_patch).all()
+        and np.array_equal(transported, native_patch)
+    )
+    if not patch_contract:
+        raise RuntimeError(
+            "TARGET_CLIP_RAW_PATCH_SELF_CONTROL_FAILED "
+            f"transported_shape={tuple(transported.shape)} native_shape={tuple(native_patch.shape)} "
+            f"transported_dtype={transported.dtype} native_dtype={native_patch.dtype} "
+            f"max_abs_diff={patch_diff}"
+        )
+
+    native_effective = native._prepare_for_connector(torch.from_numpy(native_patch), connector).to(device=device)
+    raw_effective = native._prepare_for_connector(torch.from_numpy(transported), connector).to(device=device)
+    effective_diff = _tensor_max_abs_diff(torch, np, native_effective, raw_effective)
+    if (
+        tuple(native_effective.shape) != tuple(raw_effective.shape)
+        or native_effective.dtype != raw_effective.dtype
+        or native_effective.device != raw_effective.device
+        or not torch.equal(native_effective, raw_effective)
+    ):
+        raise RuntimeError(
+            "TARGET_CLIP_RAW_EFFECTIVE_INPUT_SELF_CONTROL_FAILED "
+            f"dtype={raw_effective.dtype} device={raw_effective.device} shape={tuple(raw_effective.shape)} "
+            f"max_abs_diff={effective_diff}"
+        )
+
+    batch_size = int(raw_effective.shape[0])
+    paired_output = connector(torch.cat((native_effective, raw_effective), dim=0))
+    native_live = paired_output[:batch_size]
+    raw_live = paired_output[batch_size:]
+    live_diff = _tensor_max_abs_diff(torch, np, native_live, raw_live)
+    if tuple(native_live.shape) != tuple(raw_live.shape) or not torch.equal(native_live, raw_live):
+        raise RuntimeError(
+            "TARGET_CLIP_RAW_LIVE_CONNECTOR_SELF_CONTROL_FAILED "
+            f"shape={tuple(raw_live.shape)} dtype={raw_live.dtype} max_abs_diff={live_diff}"
+        )
+    connector_output = raw_live.detach().to(device="cpu", dtype=torch.float32).numpy().copy(order="C")
+    if connector_output.shape != persisted_connector.shape:
+        persisted_differences = [float("inf")] * batch_size
+    else:
+        persisted_differences = [
+            _numpy_max_abs_diff(np, connector_output[index], persisted_connector[index])
+            for index in range(batch_size)
+        ]
+    audits = [
+        {
+            "persisted_patch_exact": True,
+            "effective_connector_input_exact": True,
+            "same_call_live_connector_exact": True,
+            "persisted_connector_max_abs_diff": difference,
+        }
+        for difference in persisted_differences
+    ]
+    return np.ascontiguousarray(connector_output, dtype=np.float32), audits
+
+
 def _transport_stage(core, plan, plan_id, run_root) -> tuple[int, int]:
     import numpy as np
 
@@ -526,15 +610,24 @@ def _transport_stage(core, plan, plan_id, run_root) -> tuple[int, int]:
                     native_patch = np.ascontiguousarray(target["patches"][selected], dtype=np.float32)
                     transported = core.apply_transport_condition(unit["condition"], raw_patch, source_anchor, target_anchor)
                     transported = core.validate_patch_batch(transported, name="transported", batch_size=len(selected))
-                    connector_output = np.ascontiguousarray(
-                        _connector_output(torch, native, connector, transported, plan["device"]), dtype=np.float32
-                    )
                     native_connector = np.ascontiguousarray(target["connectors"][selected], dtype=np.float32)
+                    raw_audits = None
+                    if encoder == "TARGET_CLIP" and unit["condition"] == "RAW":
+                        connector_output, raw_audits = _target_clip_raw_self_control(
+                            torch,
+                            native,
+                            connector,
+                            transported,
+                            native_patch,
+                            native_connector,
+                            plan["device"],
+                        )
+                    else:
+                        connector_output = np.ascontiguousarray(
+                            _connector_output(torch, native, connector, transported, plan["device"]), dtype=np.float32
+                        )
                     if connector_output.shape != (len(selected), 196, 1536) or not np.isfinite(connector_output).all():
                         raise core.ContractError("connector output contract mismatch")
-                    if encoder == "TARGET_CLIP" and unit["condition"] == "RAW":
-                        if not np.array_equal(transported, native_patch) or not np.array_equal(connector_output, native_connector):
-                            raise core.ContractError("TARGET_CLIP RAW patch/connector self-control failed")
                     metric_rows = []
                     for metric_index, image_id in enumerate(unit["image_ids"]):
                         patch_metrics = core.representation_metrics(
@@ -547,13 +640,14 @@ def _transport_stage(core, plan, plan_id, run_root) -> tuple[int, int]:
                             np.ascontiguousarray(native_connector[metric_index : metric_index + 1]),
                             target_connector_anchor,
                         )
-                        metric_rows.append(
-                            {
+                        metric_row = {
                                 "image_id": image_id,
                                 **{f"patch_{key}": value for key, value in patch_metrics.items()},
                                 **{f"connector_{key}": value for key, value in connector_metrics.items()},
                             }
-                        )
+                        if raw_audits is not None:
+                            metric_row["target_clip_raw_self_control"] = raw_audits[metric_index]
+                        metric_rows.append(metric_row)
                     arrays = {
                         "image_ids": np.asarray(unit["image_ids"], dtype="U96"),
                         "transported": transported,

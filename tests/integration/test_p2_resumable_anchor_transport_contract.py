@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import io
 import shutil
 from contextlib import nullcontext
 from pathlib import Path
@@ -16,7 +17,7 @@ from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as ra
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "configs/vlm_compat/p2_universal_anchor_transport_v0.json"
 MANIFEST = ROOT / "data/manifests/p1_1000.jsonl"
-BASELINE = "a3d4cc57c0f2edde8639d718a3f2ef0c3dfe4275"
+BASELINE = "9f488cc46f1711c3f43e8ed24561198757988927"
 
 
 def _plan(tmp_path: Path, run_root: Path):
@@ -223,3 +224,131 @@ def test_stage01_first_chunk_main_orchestration_isolated_forward_and_resume_skip
     assert first_artifact.stat().st_mtime_ns == artifact_mtime
     assert first_marker.stat().st_mtime_ns == marker_mtime
     assert not list(run_root.rglob("*.partial"))
+
+
+def test_r3_like_193_to_189_reuse_and_first_stage05_resume_checkpoint(tmp_path):
+    old_space = tmp_path / "old"
+    new_space = tmp_path / "new"
+    old_space.mkdir()
+    new_space.mkdir()
+    old_root = old_space / "run"
+    old_plan = _plan(old_space, old_root)
+    old_plan_id = rat.initialize_run(old_root, old_plan)
+    old_completed = [unit for unit in old_plan["expected_units"] if unit["stage"] in rat.STAGES[1:5]]
+    assert len(old_completed) == 193
+    for index, unit in enumerate(old_completed):
+        if unit["stage"] in rat.STAGES[1:4]:
+            buffer = io.BytesIO()
+            np.savez(
+                buffer,
+                scientific_value=np.asarray([index], dtype=np.float32),
+                plan_id=np.asarray(old_plan_id, dtype="U64"),
+            )
+            payload = buffer.getvalue()
+        else:
+            payload = rat.deterministic_fake_payload(old_plan_id, unit)
+        rat.atomic_publish_unit(old_root, unit, payload, old_plan_id, elapsed_seconds=0)
+
+    old_evidence = {
+        path.relative_to(old_root).as_posix(): (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in old_root.rglob("*")
+        if path.is_file()
+    }
+    new_root = new_space / "run"
+    new_plan = _plan(new_space, new_root)
+    new_plan["roots"]["reuse_root"] = str(old_root.resolve())
+    new_plan["repository_commit"] = "2" * 40
+    assert new_plan["expected_unit_count"] == 2345
+
+    inspection = rat.inspect_exact_feature_reuse(new_plan)
+    assert inspection["status"] == "ELIGIBLE"
+    assert inspection["source_plan_id"] == old_plan_id
+    assert inspection["source_completed_unit_count"] == 193
+    assert inspection["eligible_feature_unit_count"] == 189
+    new_plan_id = rat.initialize_run(new_root, new_plan)
+    reuse = rat.reuse_exact_feature_units(new_root, new_plan, new_plan_id)
+    assert reuse == {"eligible": 189, "reused": 189, "ignored": 0}
+
+    worker_spec = importlib.util.spec_from_file_location(
+        "p2_worker_r4_reuse", ROOT / "scripts/p2_anchor_transport_stage_worker.py"
+    )
+    worker = importlib.util.module_from_spec(worker_spec)
+    assert worker_spec.loader is not None
+    worker_spec.loader.exec_module(worker)
+    for stage in rat.STAGES[1:4]:
+        result = worker.execute_stage(rat, new_plan, new_plan_id, new_root, stage)
+        assert result["completed_new"] == 0
+        assert result["model_load_count"] == 0
+        assert result["extractor_worker_invocation_count"] == 0
+
+    feature_units = [unit for unit in new_plan["expected_units"] if unit["stage"] in rat.STAGES[1:4]]
+    for unit in feature_units:
+        with np.load(old_root / unit["artifact_relative_path"], allow_pickle=False) as old_archive:
+            with np.load(new_root / unit["artifact_relative_path"], allow_pickle=False) as new_archive:
+                assert np.array_equal(old_archive["scientific_value"], new_archive["scientific_value"])
+                assert new_archive["plan_id"].item() == new_plan_id
+
+    anchor_result = worker.execute_stage(
+        rat,
+        new_plan,
+        new_plan_id,
+        new_root,
+        "04_ANCHOR_REGISTRY",
+        fake_loader=lambda stage: object(),
+        fake_processor=lambda model, unit: rat.deterministic_fake_payload(new_plan_id, unit),
+    )
+    assert anchor_result["completed_new"] == 4
+
+    stage05_units = [unit for unit in new_plan["expected_units"] if unit["stage"] == "05_TRANSPORT_AND_CONNECTOR_VALIDATION"]
+    first = stage05_units[0]
+    processed: list[str] = []
+
+    def interrupt_after_first(model, unit):
+        processed.append(unit["unit_id"])
+        worker._STOP_REQUESTED = True
+        return rat.deterministic_fake_payload(new_plan_id, unit)
+
+    worker._STOP_REQUESTED = False
+    with pytest.raises(worker.StageInterrupted):
+        worker.execute_stage(
+            rat,
+            new_plan,
+            new_plan_id,
+            new_root,
+            "05_TRANSPORT_AND_CONNECTOR_VALIDATION",
+            fake_loader=lambda stage: object(),
+            fake_processor=interrupt_after_first,
+        )
+    artifact = new_root / first["artifact_relative_path"]
+    marker = rat.marker_path(new_root, first["unit_id"])
+    artifact_bytes = artifact.read_bytes()
+    marker_bytes = marker.read_bytes()
+    artifact_mtime = artifact.stat().st_mtime_ns
+    marker_mtime = marker.stat().st_mtime_ns
+    assert rat.verify_run(new_root)["status"] == "PARTIAL"
+    assert rat.reuse_exact_feature_units(new_root, new_plan, new_plan_id) == {
+        "eligible": 189,
+        "reused": 0,
+        "ignored": 0,
+    }
+
+    worker._STOP_REQUESTED = False
+    resumed = worker.execute_stage(
+        rat,
+        new_plan,
+        new_plan_id,
+        new_root,
+        "05_TRANSPORT_AND_CONNECTOR_VALIDATION",
+        fake_loader=lambda stage: object(),
+        fake_processor=lambda model, unit: (
+            processed.append(unit["unit_id"]) or rat.deterministic_fake_payload(new_plan_id, unit)
+        ),
+    )
+    assert resumed["completed_new"] == len(stage05_units) - 1
+    assert processed.count(first["unit_id"]) == 1
+    assert artifact.read_bytes() == artifact_bytes and marker.read_bytes() == marker_bytes
+    assert artifact.stat().st_mtime_ns == artifact_mtime
+    assert marker.stat().st_mtime_ns == marker_mtime
+    for relative, (payload, modified) in old_evidence.items():
+        path = old_root / relative
+        assert path.read_bytes() == payload and path.stat().st_mtime_ns == modified

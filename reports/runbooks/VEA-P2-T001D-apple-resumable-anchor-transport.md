@@ -1,6 +1,6 @@
-# VEA-P2-T001D-R3 persistent Apple runbook
+# VEA-P2-T001D-R4 persistent Apple runbook
 
-Run this only after independent review of the pushed R3 commit, from the user's
+Run this only after independent review of the pushed R4 commit, from the user's
 existing tmux parent shell. The parent blocks deliberately do not enable strict
 shell options, replace or terminate the shell, install traps, or create/attach
 tmux. Strict behavior is confined to the generated child scripts.
@@ -9,14 +9,18 @@ tmux. Strict behavior is confined to the generated child scripts.
 
 ```bash
 REMOTE_URL='<reviewed repository URL>'
-REVIEWED_BRANCH='codex/vea-p2-t001d-r3-main-lane-dino-orchestration'
-REVIEWED_COMMIT='<40-character reviewed R3 commit>'
+REVIEWED_BRANCH='codex/vea-p2-t001d-r4-target-clip-raw-self-control'
+REVIEWED_COMMIT='<40-character reviewed R4 commit>'
 REPO_PARENT='/home/chltjsdh/vea/p2_repos'
 RUN_PARENT='/home/chltjsdh/vea/p2_runs'
 RUN_TOKEN="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R3-$RUN_TOKEN"
-RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R3-$RUN_TOKEN"
+TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R4-$RUN_TOKEN"
+RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R4-$RUN_TOKEN"
 LAUNCH_LOG_ROOT="$RUN_PARENT/launcher-$RUN_TOKEN"
+REUSE_ROOT='/home/chltjsdh/vea/p2_runs/VEA-P2-T001D-R3-20260811T130551Z-355184'
+EXPECTED_REUSE_PLAN_ID='f6d346a129386c607330f43eb1410dfa6d5ccaca89438c55f42c3a4ac1566483'
+EXPECTED_REUSE_COMMIT='9f488cc46f1711c3f43e8ed24561198757988927'
+EXPECTED_REUSABLE_FEATURE_UNITS='189'
 
 MAIN_PY='/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3'
 MAIN_OVERLAY='/home/chltjsdh/vea/runtime/p2_tinyllava_overlay/site-packages'
@@ -44,7 +48,7 @@ PYTHONPATH="$MAIN_OVERLAY${PYTHONPATH:+:$PYTHONPATH}"
 export RUN_TOKEN GPU_INDEX MAIN_PY MAIN_OVERLAY TRANSFORMERS_CACHE HF_MODULES_CACHE HF_HOME HF_HUB_CACHE
 export HF_HUB_OFFLINE TRANSFORMERS_OFFLINE HF_DATASETS_OFFLINE HF_HUB_DISABLE_TELEMETRY DO_NOT_TRACK
 export PYTHONNOUSERSITE PYTHONPATH DATASET_ROOT CACHE_ROOT DINOV3_RUNTIME_ROOT DINOV3_SNAPSHOT_ROOT DEVICE
-export TASK_REPOSITORY RUN_ROOT LAUNCH_LOG_ROOT REVIEWED_COMMIT REVIEWED_BRANCH
+export TASK_REPOSITORY RUN_ROOT LAUNCH_LOG_ROOT REVIEWED_COMMIT REVIEWED_BRANCH REUSE_ROOT
 
 LAUNCH_READY=1
 FAILED_STAGE='NOT_STARTED'
@@ -75,7 +79,7 @@ if [ "$LAUNCH_READY" -eq 1 ]; then
   for REQUIRED_DIRECTORY in \
     "$MAIN_OVERLAY" "$TRANSFORMERS_CACHE" "$HF_MODULES_CACHE" "$HF_HOME" "$HF_HUB_CACHE" \
     "$TINYLLAVA_SNAPSHOT" "$CLIP_SNAPSHOT" "$SIGLIP2_SNAPSHOT" \
-    "$DINOV3_RUNTIME_ROOT" "$DINOV3_SNAPSHOT_ROOT" "$DATASET_ROOT"; do
+    "$DINOV3_RUNTIME_ROOT" "$DINOV3_SNAPSHOT_ROOT" "$DATASET_ROOT" "$REUSE_ROOT"; do
     if [ ! -d "$REQUIRED_DIRECTORY" ]; then RESOURCE_PREFLIGHT=FAILED; fi
   done
   for REQUIRED_FILE in "$MAIN_PY" "$TASK_REPOSITORY/data/manifests/p1_1000.jsonl"; do
@@ -111,11 +115,11 @@ dataset root, and the immutable manifest using directory/file checks only. No
 Torch, Transformers, Safetensors, Pillow, model, or CUDA module has been
 imported before the GPU gate.
 
-The failed R2 run root is immutable failure evidence: do not resume it, do not
-reuse it, and do not execute its `EXACT_MANUAL_RESUME`. This R3 block creates a
-fresh persistent repository, run root, immutable plan ID, and supervisor log.
-The retained first 16-image DINO chunk is the only smoke and remains a real
-checkpoint; run no separate model smoke.
+The R3 run root is an immutable, read-only reuse source. Never execute its
+`EXACT_MANUAL_RESUME`, delete it, or modify it. This R4 block creates a fresh
+persistent repository, run root, immutable plan ID, and supervisor log. It
+reuses only the 189 inspected Stage 01–3 units, regenerates Stage 04, and retains
+the first TARGET_CLIP/RAW Stage 05 unit as the real smoke and checkpoint.
 
 ## 2. Plan exactly once, before GPU waiting
 
@@ -132,11 +136,45 @@ if [ "$LAUNCH_READY" -eq 1 ]; then
   --dinov3-runtime-root "$DINOV3_RUNTIME_ROOT" \
   --dinov3-snapshot-root "$DINOV3_SNAPSHOT_ROOT" \
   --run-root "$RUN_ROOT" \
+  --reuse-root "$REUSE_ROOT" \
   --device "$DEVICE" \
     >"$PLAN_STDOUT" 2>"$PLAN_STDERR"
   PLAN_RC=$?
   printf 'PLAN_EXIT_CODE=%s\nPLAN_STDOUT=%s\nPLAN_STDERR=%s\n' "$PLAN_RC" "$PLAN_STDOUT" "$PLAN_STDERR"
   if [ "$PLAN_RC" -ne 0 ]; then LAUNCH_READY=0; FAILED_STAGE='IMMUTABLE_PLAN'; fi
+fi
+```
+
+Inspect the explicit reuse root read-only and fail before GPU waiting unless its
+bound identity and exact completed-unit counts match:
+
+```bash
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  REUSE_INSPECTION_LOG="$LAUNCH_LOG_ROOT/reuse-inspection-$RUN_TOKEN.log"
+  PYTHONPATH="$TASK_REPOSITORY/src" "$MAIN_PY" - "$RUN_ROOT" "$EXPECTED_REUSE_PLAN_ID" "$EXPECTED_REUSE_COMMIT" "$EXPECTED_REUSABLE_FEATURE_UNITS" >"$REUSE_INSPECTION_LOG" 2>&1 <<'PY'
+import sys
+from pathlib import Path
+from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as core
+run_root = Path(sys.argv[1])
+plan, _ = core.load_bound_plan(run_root)
+inspection = core.inspect_exact_feature_reuse(plan)
+print(f"REUSE_SOURCE_PLAN_ID={inspection['source_plan_id']}")
+print(f"REUSE_SOURCE_COMPLETED_UNITS={inspection['source_completed_unit_count']}")
+print(f"REUSE_FEATURE_UNITS_ELIGIBLE={inspection['eligible_feature_unit_count']}")
+if inspection["status"] != "ELIGIBLE":
+    raise SystemExit(f"REUSE_INSPECTION_STATUS={inspection['status']}")
+if inspection["source_plan_id"] != sys.argv[2]:
+    raise SystemExit("REUSE_SOURCE_PLAN_ID_MISMATCH")
+if inspection["source_repository_commit"] != sys.argv[3]:
+    raise SystemExit("REUSE_SOURCE_COMMIT_MISMATCH")
+if inspection["source_completed_unit_count"] != 193:
+    raise SystemExit("REUSE_SOURCE_COMPLETED_UNIT_COUNT_MISMATCH")
+if inspection["eligible_feature_unit_count"] != int(sys.argv[4]):
+    raise SystemExit("REUSE_FEATURE_UNIT_COUNT_MISMATCH")
+PY
+  REUSE_INSPECTION_RC=$?
+  cat "$REUSE_INSPECTION_LOG"
+  if [ "$REUSE_INSPECTION_RC" -ne 0 ]; then LAUNCH_READY=0; FAILED_STAGE='EXACT_REUSE_INSPECTION'; fi
 fi
 ```
 
@@ -243,6 +281,7 @@ COMMON=(
   --dinov3-runtime-root "$DINOV3_RUNTIME_ROOT"
   --dinov3-snapshot-root "$DINOV3_SNAPSHOT_ROOT"
   --run-root "$RUN_ROOT"
+  --reuse-root "$REUSE_ROOT"
   --device "$DEVICE"
 )
 ATTEMPT=0
@@ -253,6 +292,8 @@ TEE_EXIT_CODE=1
 VERIFY_EXIT_CODE=1
 FINALIZE_EXIT_CODE=1
 VEA_P2_EXECUTION=FAILED
+EXPECTED_REUSABLE_FEATURE_UNITS=189
+REUSED_FEATURE_UNITS=NOT_OBSERVED
 while [ "$ATTEMPT" -lt 4 ]; do
   ATTEMPT=$((ATTEMPT + 1))
   GATE_LOG="$LAUNCH_LOG_ROOT/gate-attempt-${ATTEMPT}-$RUN_TOKEN.log"
@@ -266,6 +307,27 @@ while [ "$ATTEMPT" -lt 4 ]; do
     PIPE_CODES=("${PIPESTATUS[@]}")
     WORKER_EXIT_CODE="${PIPE_CODES[0]}"
     TEE_EXIT_CODE="${PIPE_CODES[1]}"
+    if [ "$COMMAND" = run ]; then
+      REUSED_FEATURE_UNITS="$("$MAIN_PY" - "$RUN_ROOT/progress.jsonl" <<'VEA_REUSE_EVENT'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+reused = None
+if path.is_file():
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(raw)
+        if row.get("event_type") == "RUN_STARTED":
+            reused = row.get("reuse", {}).get("reused")
+print(reused if isinstance(reused, int) else "NOT_OBSERVED")
+VEA_REUSE_EVENT
+)"
+      printf 'REUSED_FEATURE_UNITS=%s\n' "$REUSED_FEATURE_UNITS"
+      if [ "$REUSED_FEATURE_UNITS" != "$EXPECTED_REUSABLE_FEATURE_UNITS" ]; then
+        WORKER_EXIT_CODE=1
+      fi
+    fi
   fi
   VERIFY_JSON="$LAUNCH_LOG_ROOT/verify-attempt-${ATTEMPT}-$RUN_TOKEN.json"
   VERIFY_STDERR="$LAUNCH_LOG_ROOT/verify-attempt-${ATTEMPT}-$RUN_TOKEN.stderr.log"
@@ -309,6 +371,42 @@ STATUS_JSON="$LAUNCH_LOG_ROOT/status-$RUN_TOKEN.json"
 STATUS_STDERR="$LAUNCH_LOG_ROOT/status-$RUN_TOKEN.stderr.log"
 "$MAIN_PY" "$TASK_REPOSITORY/scripts/run_resumable_anchor_transport.py" status "${COMMON[@]}" \
   >"$STATUS_JSON" 2>"$STATUS_STDERR"
+FIRST_STAGE05_CHECKPOINT="$("$MAIN_PY" - "$TASK_REPOSITORY" "$RUN_ROOT" <<'VEA_FIRST_STAGE05_CHECKPOINT'
+import pathlib
+import sys
+
+repository = pathlib.Path(sys.argv[1])
+run_root = pathlib.Path(sys.argv[2])
+sys.path.insert(0, str(repository / "src"))
+from vision_encoder_alignment.vlm_compat.resumable_anchor_transport import (  # noqa: E402
+    load_bound_plan,
+    marker_path,
+    validate_unit_completion,
+)
+
+try:
+    plan, plan_id = load_bound_plan(run_root)
+    first = next(
+        unit
+        for unit in plan["expected_units"]
+        if unit["stage"] == "05_TRANSPORT_AND_CONNECTOR_VALIDATION" and unit["encoder"] == "TARGET_CLIP"
+        and unit["condition"] == "RAW"
+    )
+    artifact_path = run_root / first["artifact_relative_path"]
+    done_path = marker_path(run_root, first["unit_id"])
+    if not artifact_path.is_file() and not done_path.is_file():
+        print("PENDING")
+    else:
+        validate_unit_completion(run_root, first, plan_id)
+        print("PASS")
+except Exception:
+    print("FAILED")
+VEA_FIRST_STAGE05_CHECKPOINT
+)"
+if [ "$FIRST_STAGE05_CHECKPOINT" = PENDING ] && [ "$VEA_P2_EXECUTION" = FAILED ]; then
+  FIRST_STAGE05_CHECKPOINT=FAILED
+fi
+printf 'FIRST_STAGE05_CHECKPOINT=%s\n' "$FIRST_STAGE05_CHECKPOINT"
 printf 'RESOURCE_RESUMES=%s\nVERIFY_EXIT_CODE=%s\nFINALIZE_EXIT_CODE=%s\n' \
   "$RESOURCE_RESUMES" "$VERIFY_EXIT_CODE" "$FINALIZE_EXIT_CODE"
 printf 'EXACT_MANUAL_RESUME=%q %q resume' "$MAIN_PY" "$TASK_REPOSITORY/scripts/run_resumable_anchor_transport.py"

@@ -940,39 +940,93 @@ def recover_orphans(run_root: Path, plan: Mapping[str, Any], plan_id: str) -> li
     return quarantined
 
 
-def reuse_exact_feature_units(run_root: Path, plan: Mapping[str, Any], plan_id: str) -> dict[str, int]:
-    """Copy only exact-compatible feature units from the explicit reuse root."""
+def inspect_exact_feature_reuse(plan: Mapping[str, Any]) -> dict[str, Any]:
+    """Read and validate an explicit reuse source without copying or mutating it."""
 
     reuse_value = plan["roots"].get("reuse_root")
     if reuse_value is None:
-        return {"reused": 0, "ignored": 0}
+        return {
+            "status": "NO_REUSE_ROOT",
+            "reuse_root": None,
+            "source_plan_id": None,
+            "source_repository_commit": None,
+            "source_completed_unit_count": 0,
+            "eligible_feature_unit_count": 0,
+            "eligible_unit_ids": [],
+            "incompatibilities": [],
+        }
     reuse_root = Path(reuse_value)
     try:
         old_plan, old_plan_id = load_bound_plan(reuse_root)
-    except HarnessError:
-        return {"reused": 0, "ignored": 1}
-    identity_match = (
-        old_plan.get("schema_id") == plan.get("schema_id")
-        and old_plan.get("manifest_sha256") == plan.get("manifest_sha256")
-        and old_plan.get("manifest_rows") == plan.get("manifest_rows")
-        and old_plan.get("identity_bindings") == plan.get("identity_bindings")
-        and old_plan.get("feature_chunk_size") == plan.get("feature_chunk_size")
-        and old_plan.get("artifact_schemas") == plan.get("artifact_schemas")
+    except HarnessError as error:
+        raise CorruptionError(f"explicit reuse source plan binding is invalid: {reuse_root}") from error
+    identity_fields = (
+        "schema_id",
+        "manifest_sha256",
+        "manifest_rows",
+        "identity_bindings",
+        "feature_chunk_size",
+        "artifact_schemas",
     )
-    if not identity_match:
-        return {"reused": 0, "ignored": 1}
-    old_units = {unit["unit_id"]: unit for unit in old_plan["expected_units"]}
+    incompatibilities = [name for name in identity_fields if old_plan.get(name) != plan.get(name)]
+    feature_units = [unit for unit in plan["expected_units"] if unit["stage"] in STAGES[1:4]]
+    old_feature_units = [unit for unit in old_plan["expected_units"] if unit["stage"] in STAGES[1:4]]
+    if old_feature_units != feature_units:
+        incompatibilities.append("stage_01_03_unit_definitions")
+    base = {
+        "reuse_root": str(reuse_root),
+        "source_plan_id": old_plan_id,
+        "source_repository_commit": old_plan.get("repository_commit"),
+    }
+    if incompatibilities:
+        return {
+            "status": "INCOMPATIBLE",
+            **base,
+            "source_completed_unit_count": 0,
+            "eligible_feature_unit_count": 0,
+            "eligible_unit_ids": [],
+            "incompatibilities": sorted(set(incompatibilities)),
+        }
+    completed_unit_ids: set[str] = set()
+    for old_unit in old_plan["expected_units"]:
+        artifact = reuse_root / old_unit["artifact_relative_path"]
+        marker = marker_path(reuse_root, old_unit["unit_id"])
+        if artifact.exists() != marker.exists():
+            raise CorruptionError(f"reuse marker/artifact mismatch for {old_unit['unit_id']}")
+        if marker.exists():
+            if not validate_unit_completion(reuse_root, old_unit, old_plan_id):
+                raise CorruptionError(f"reuse completion validation failed for {old_unit['unit_id']}")
+            completed_unit_ids.add(str(old_unit["unit_id"]))
+    eligible = [str(unit["unit_id"]) for unit in feature_units if str(unit["unit_id"]) in completed_unit_ids]
+    return {
+        "status": "ELIGIBLE",
+        **base,
+        "source_completed_unit_count": len(completed_unit_ids),
+        "eligible_feature_unit_count": len(eligible),
+        "eligible_unit_ids": eligible,
+        "incompatibilities": [],
+    }
+
+
+def reuse_exact_feature_units(run_root: Path, plan: Mapping[str, Any], plan_id: str) -> dict[str, int]:
+    """Publish only the exact eligible units returned by the read-only inspector."""
+
+    inspection = inspect_exact_feature_reuse(plan)
+    if inspection["status"] == "NO_REUSE_ROOT":
+        return {"eligible": 0, "reused": 0, "ignored": 0}
+    if inspection["status"] == "INCOMPATIBLE":
+        return {"eligible": 0, "reused": 0, "ignored": 1}
+    reuse_root = Path(str(inspection["reuse_root"]))
+    old_plan_id = str(inspection["source_plan_id"])
+    new_units = {unit["unit_id"]: unit for unit in plan["expected_units"]}
     reused = 0
-    for unit in plan["expected_units"]:
-        if unit["stage"] not in STAGES[1:4] or validate_unit_completion(run_root, unit, plan_id):
+    for unit_id in inspection["eligible_unit_ids"]:
+        unit = new_units[unit_id]
+        if validate_unit_completion(run_root, unit, plan_id):
             continue
-        candidate = old_units.get(unit["unit_id"])
-        if candidate != unit:
-            continue
-        # Once the candidate claims an exact identity, corruption is fatal.
-        if not validate_unit_completion(reuse_root, candidate, old_plan_id):
-            continue
-        source_path = reuse_root / candidate["artifact_relative_path"]
+        if not validate_unit_completion(reuse_root, unit, old_plan_id):
+            raise CorruptionError(f"inspected reuse unit disappeared before publication: {unit_id}")
+        source_path = reuse_root / unit["artifact_relative_path"]
         payload = source_path.read_bytes()
         if source_path.suffix == ".npz":
             np = _numpy()
@@ -989,7 +1043,7 @@ def reuse_exact_feature_units(run_root: Path, plan: Mapping[str, Any], plan_id: 
             run_root,
             progress_event(plan_id, "RESUMED", reuse_root=str(reuse_root), reused_feature_units=reused),
         )
-    return {"reused": reused, "ignored": 0}
+    return {"eligible": int(inspection["eligible_feature_unit_count"]), "reused": reused, "ignored": 0}
 
 
 def current_process_start_identity(pid: int | None = None) -> str | None:
@@ -1834,6 +1888,7 @@ __all__ = [
     "generation_metrics",
     "global_anchor_transport",
     "initialize_run",
+    "inspect_exact_feature_reuse",
     "load_bound_plan",
     "load_config",
     "marker_path",

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import importlib.util
+import io
 import json
 import os
 import re
@@ -20,7 +22,7 @@ from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as ra
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "configs/vlm_compat/p2_universal_anchor_transport_v0.json"
 MANIFEST_PATH = ROOT / "data/manifests/p1_1000.jsonl"
-BASELINE = "a3d4cc57c0f2edde8639d718a3f2ef0c3dfe4275"
+BASELINE = "9f488cc46f1711c3f43e8ed24561198757988927"
 
 
 def config():
@@ -65,12 +67,103 @@ def patch(value: float, count: int = 1):
     return np.full((count, 196, 768), value, dtype=np.float32)
 
 
+def fake_feature_npz(plan_id: str, unit, value: float = 1.0) -> bytes:
+    buffer = io.BytesIO()
+    np.savez(
+        buffer,
+        scientific_value=np.asarray([value], dtype=np.float32),
+        plan_id=np.asarray(plan_id, dtype="U64"),
+    )
+    return buffer.getvalue()
+
+
 def coordinator_module(name="p2_coordinator"):
     spec = importlib.util.spec_from_file_location(name, ROOT / "scripts/run_resumable_anchor_transport.py")
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def worker_module(name="p2_worker_test"):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts/p2_anchor_transport_stage_worker.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+class FakeTensor:
+    def __init__(self, array, *, device="cpu"):
+        self.array = np.array(array, copy=True)
+        self.device = device
+
+    @property
+    def shape(self):
+        return self.array.shape
+
+    @property
+    def dtype(self):
+        return self.array.dtype
+
+    def to(self, *, device=None, dtype=None):
+        target_dtype = self.array.dtype if dtype is None else dtype
+        return FakeTensor(self.array.astype(target_dtype), device=self.device if device is None else device)
+
+    def detach(self):
+        return self
+
+    def numpy(self):
+        return self.array.copy()
+
+    def __getitem__(self, item):
+        return FakeTensor(self.array[item], device=self.device)
+
+
+class FakeTorch:
+    float32 = np.dtype(np.float32)
+    float64 = np.dtype(np.float64)
+
+    @staticmethod
+    def from_numpy(value):
+        return FakeTensor(value)
+
+    @staticmethod
+    def equal(left, right):
+        return left.dtype == right.dtype and left.device == right.device and np.array_equal(left.array, right.array)
+
+    @staticmethod
+    def cat(values, dim=0):
+        return FakeTensor(np.concatenate([value.array for value in values], axis=dim), device=values[0].device)
+
+
+class FakeNativeConnectorPreparation:
+    def __init__(self, *, diverge_second=False):
+        self.calls = 0
+        self.diverge_second = diverge_second
+
+    def _prepare_for_connector(self, tensor, connector):
+        self.calls += 1
+        prepared = tensor.to(device=connector.device, dtype=connector.dtype)
+        if self.diverge_second and self.calls == 2:
+            prepared.array.flat[0] += np.float16(1)
+        return prepared
+
+
+class FakePairedConnector:
+    dtype = np.dtype(np.float16)
+    device = "fake:0"
+
+    def __init__(self, *, diverge_outputs=False):
+        self.calls = 0
+        self.diverge_outputs = diverge_outputs
+
+    def __call__(self, paired):
+        self.calls += 1
+        output = np.concatenate((paired.array, paired.array), axis=-1)
+        if self.diverge_outputs:
+            output[output.shape[0] // 2 :, 0, 0] += np.float16(1)
+        return FakeTensor(output, device=paired.device)
 
 
 def test_canonical_config_validation():
@@ -254,6 +347,81 @@ def test_raw_target_self_control_is_exact():
     assert result is not source and np.array_equal(result, source)
 
 
+def test_target_clip_raw_self_control_uses_one_paired_call_and_keeps_persisted_metrics():
+    worker = worker_module("p2_worker_raw_self_control")
+    native = FakeNativeConnectorPreparation()
+    connector = FakePairedConnector()
+    native_patch = patch(1.0, count=2)
+    transported = native_patch.copy(order="C")
+    persisted = np.ones((2, 196, 1536), dtype=np.float32)
+    persisted[0, 0, 0] += np.float32(0.0001)
+    live, audits = worker._target_clip_raw_self_control(
+        FakeTorch, native, connector, transported, native_patch, persisted, connector.device
+    )
+    assert connector.calls == 1
+    assert native.calls == 2
+    assert live.shape == persisted.shape and live.dtype == np.float32
+    assert all(audit["persisted_patch_exact"] for audit in audits)
+    assert all(audit["effective_connector_input_exact"] for audit in audits)
+    assert all(audit["same_call_live_connector_exact"] for audit in audits)
+    assert audits[0]["persisted_connector_max_abs_diff"] > 0.0
+    metrics = rat.representation_metrics(live, persisted, np.zeros((2, 196, 1536), dtype=np.float32))
+    assert {"flattened_cosine_mean", "norm_ratio_mean", "nmse_mean"} <= set(metrics)
+    source = inspect.getsource(worker._target_clip_raw_self_control)
+    assert "allclose" not in source and "tolerance" not in source
+
+
+def test_target_clip_raw_patch_mismatch_fails_before_connector():
+    worker = worker_module("p2_worker_raw_patch_failure")
+    connector = FakePairedConnector()
+    native_patch = patch(1.0)
+    transported = native_patch.copy(order="C")
+    transported.flat[0] = np.nextafter(transported.flat[0], np.float32(2.0))
+    with pytest.raises(RuntimeError, match="^TARGET_CLIP_RAW_PATCH_SELF_CONTROL_FAILED"):
+        worker._target_clip_raw_self_control(
+            FakeTorch,
+            FakeNativeConnectorPreparation(),
+            connector,
+            transported,
+            native_patch,
+            np.ones((1, 196, 1536), dtype=np.float32),
+            connector.device,
+        )
+    assert connector.calls == 0
+
+
+def test_target_clip_raw_effective_input_mismatch_is_separate():
+    worker = worker_module("p2_worker_raw_effective_failure")
+    connector = FakePairedConnector()
+    with pytest.raises(RuntimeError, match="^TARGET_CLIP_RAW_EFFECTIVE_INPUT_SELF_CONTROL_FAILED"):
+        worker._target_clip_raw_self_control(
+            FakeTorch,
+            FakeNativeConnectorPreparation(diverge_second=True),
+            connector,
+            patch(1.0),
+            patch(1.0),
+            np.ones((1, 196, 1536), dtype=np.float32),
+            connector.device,
+        )
+    assert connector.calls == 0
+
+
+def test_target_clip_raw_live_connector_divergence_is_separate():
+    worker = worker_module("p2_worker_raw_live_failure")
+    connector = FakePairedConnector(diverge_outputs=True)
+    with pytest.raises(RuntimeError, match="^TARGET_CLIP_RAW_LIVE_CONNECTOR_SELF_CONTROL_FAILED"):
+        worker._target_clip_raw_self_control(
+            FakeTorch,
+            FakeNativeConnectorPreparation(),
+            connector,
+            patch(1.0),
+            patch(1.0),
+            np.ones((1, 196, 1536), dtype=np.float32),
+            connector.device,
+        )
+    assert connector.calls == 1
+
+
 def test_core_contains_no_fitting_primitives():
     source = (ROOT / "src/vision_encoder_alignment/vlm_compat/resumable_anchor_transport.py").read_text(encoding="utf-8").lower()
     assert "np.linalg.svd" not in source
@@ -369,6 +537,67 @@ def test_explicit_reuse_root_requires_exact_path(tmp_path):
                 value, repository_commit=BASELINE, config_sha256=value["config_sha256"],
                 manifest_sha256=value["manifest_sha256"], roots=roots, device="fake-cpu",
             )
+
+
+def test_exact_reuse_inspector_is_read_only_and_shared_with_publication(tmp_path):
+    old_space = tmp_path / "old-space"
+    old_space.mkdir()
+    old_plan = mini_plan(old_space, "01_DINOV3_FEATURE_BANK")
+    old_root = old_space / "run"
+    old_plan_id = rat.initialize_run(old_root, old_plan)
+    unit = old_plan["expected_units"][0]
+    rat.atomic_publish_unit(old_root, unit, fake_feature_npz(old_plan_id, unit), old_plan_id, elapsed_seconds=0)
+    source_artifact = old_root / unit["artifact_relative_path"]
+    source_marker = rat.marker_path(old_root, unit["unit_id"])
+    artifact_before = source_artifact.read_bytes()
+    marker_before = source_marker.read_bytes()
+    artifact_mtime = source_artifact.stat().st_mtime_ns
+    marker_mtime = source_marker.stat().st_mtime_ns
+
+    new_plan = copy.deepcopy(old_plan)
+    new_root = tmp_path / "new-run"
+    new_plan["roots"]["run_root"] = str(new_root.resolve())
+    new_plan["roots"]["reuse_root"] = str(old_root.resolve())
+    new_plan["repository_commit"] = "1" * 40
+    inspection = rat.inspect_exact_feature_reuse(new_plan)
+    assert inspection["status"] == "ELIGIBLE"
+    assert inspection["source_plan_id"] == old_plan_id
+    assert inspection["source_completed_unit_count"] == 1
+    assert inspection["eligible_feature_unit_count"] == 1
+    assert inspection["eligible_unit_ids"] == [unit["unit_id"]]
+    assert source_artifact.read_bytes() == artifact_before and source_marker.read_bytes() == marker_before
+    assert source_artifact.stat().st_mtime_ns == artifact_mtime
+    assert source_marker.stat().st_mtime_ns == marker_mtime
+
+    new_plan_id = rat.initialize_run(new_root, new_plan)
+    result = rat.reuse_exact_feature_units(new_root, new_plan, new_plan_id)
+    assert result == {"eligible": 1, "reused": 1, "ignored": 0}
+    with np.load(new_root / unit["artifact_relative_path"], allow_pickle=False) as archive:
+        assert archive["scientific_value"].tolist() == [1.0]
+        assert archive["plan_id"].item() == new_plan_id
+
+
+def test_reuse_inspector_distinguishes_incompatible_from_corrupt(tmp_path):
+    old_space = tmp_path / "old-space"
+    old_space.mkdir()
+    old_plan = mini_plan(old_space, "01_DINOV3_FEATURE_BANK")
+    old_root = old_space / "run"
+    old_plan_id = rat.initialize_run(old_root, old_plan)
+    unit = old_plan["expected_units"][0]
+    rat.atomic_publish_unit(old_root, unit, fake_feature_npz(old_plan_id, unit), old_plan_id, elapsed_seconds=0)
+
+    incompatible = copy.deepcopy(old_plan)
+    incompatible["roots"]["reuse_root"] = str(old_root.resolve())
+    incompatible["manifest_sha256"] = "f" * 64
+    inspection = rat.inspect_exact_feature_reuse(incompatible)
+    assert inspection["status"] == "INCOMPATIBLE"
+    assert inspection["incompatibilities"] == ["manifest_sha256"]
+
+    exact = copy.deepcopy(old_plan)
+    exact["roots"]["reuse_root"] = str(old_root.resolve())
+    (old_root / unit["artifact_relative_path"]).write_bytes(b"corrupt")
+    with pytest.raises(rat.CorruptionError, match="artifact (size|hash) mismatch"):
+        rat.inspect_exact_feature_reuse(exact)
 
 
 def test_all_existing_plan_commands_validate_without_reuse_root(tmp_path, monkeypatch):
@@ -812,7 +1041,7 @@ def test_runbook_generated_child_environment_is_closed_by_parsed_heredocs():
     required_exports = {
         "RUN_TOKEN", "GPU_INDEX", "GPU_GATE_SCRIPT", "MAIN_PY", "TASK_REPOSITORY",
         "RUN_ROOT", "LAUNCH_LOG_ROOT", "WORKER_LOG", "DATASET_ROOT", "CACHE_ROOT",
-        "DINOV3_RUNTIME_ROOT", "DINOV3_SNAPSHOT_ROOT", "DEVICE",
+        "DINOV3_RUNTIME_ROOT", "DINOV3_SNAPSHOT_ROOT", "DEVICE", "REUSE_ROOT",
     }
     assert required_exports <= exports
     assert "RUN_TOKEN" in exports
@@ -833,6 +1062,7 @@ def test_runbook_prelaunch_failures_are_structurally_gated_from_nohup():
         "MAIN_RUNTIME_METADATA_PREFLIGHT",
         "LOCAL_RESOURCE_PREFLIGHT",
         "IMMUTABLE_PLAN",
+        "EXACT_REUSE_INSPECTION",
         "GENERATED_SCRIPT_SYNTAX",
     ):
         failure_index = parent.index(f"FAILED_STAGE='{stage}'")
@@ -854,13 +1084,34 @@ def test_runbook_resource_resume_and_pipeline_status_contract():
     assert "EXACT_MANUAL_RESUME=%q %q resume" in text
 
 
-def test_r3_runbook_fresh_plan_import_light_modules_and_safe_final_hash():
+def test_r4_runbook_exact_reuse_import_light_modules_and_safe_final_hash():
     text = (ROOT / "reports/runbooks/VEA-P2-T001D-apple-resumable-anchor-transport.md").read_text(encoding="utf-8")
-    assert "REVIEWED_BRANCH='codex/vea-p2-t001d-r3-main-lane-dino-orchestration'" in text
-    assert "REVIEWED_COMMIT='<40-character reviewed R3 commit>'" in text
-    assert 'TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R3-$RUN_TOKEN"' in text
-    assert 'RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R3-$RUN_TOKEN"' in text
-    assert "do not resume it" in text and "do not execute its `EXACT_MANUAL_RESUME`" in text
+    assert "REVIEWED_BRANCH='codex/vea-p2-t001d-r4-target-clip-raw-self-control'" in text
+    assert "REVIEWED_COMMIT='<40-character reviewed R4 commit>'" in text
+    assert 'TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R4-$RUN_TOKEN"' in text
+    assert 'RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R4-$RUN_TOKEN"' in text
+    assert "Never execute its" in text and "`EXACT_MANUAL_RESUME`" in text
+    assert "REUSE_ROOT='/home/chltjsdh/vea/p2_runs/VEA-P2-T001D-R3-20260811T130551Z-355184'" in text
+    assert "EXPECTED_REUSE_PLAN_ID='f6d346a129386c607330f43eb1410dfa6d5ccaca89438c55f42c3a4ac1566483'" in text
+    assert "EXPECTED_REUSE_COMMIT='9f488cc46f1711c3f43e8ed24561198757988927'" in text
+    assert "EXPECTED_REUSABLE_FEATURE_UNITS='189'" in text
+    assert text.count('--reuse-root "$REUSE_ROOT"') == 2
+    assert text.index("inspect_exact_feature_reuse(plan)") < text.index("## 3. Generate")
+    assert text.index("inspect_exact_feature_reuse(plan)") < text.index("nohup setsid bash")
+    for evidence in (
+        "REUSE_SOURCE_PLAN_ID=",
+        "REUSE_SOURCE_COMPLETED_UNITS=",
+        "REUSE_FEATURE_UNITS_ELIGIBLE=",
+        "REUSED_FEATURE_UNITS=",
+        "FIRST_STAGE05_CHECKPOINT=",
+    ):
+        assert evidence in text
+    compile(_generated_child_body(text, "VEA_REUSE_EVENT"), "<runbook-reuse-event>", "exec")
+    compile(
+        _generated_child_body(text, "VEA_FIRST_STAGE05_CHECKPOINT"),
+        "<runbook-first-stage05-checkpoint>",
+        "exec",
+    )
     assert "from importlib.util import find_spec" in text
     assert 'find_spec(module)' in text
     assert "PYTHONPATH='' \"$MAIN_PY\" - <<'PY'" in text
