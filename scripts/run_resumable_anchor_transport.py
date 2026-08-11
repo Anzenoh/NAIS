@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
 import importlib.metadata
+import importlib.util
 import json
 import os
 import shutil
@@ -32,6 +34,7 @@ REQUIRED_OFFLINE_ENVIRONMENT = {
     "DO_NOT_TRACK": "1",
 }
 METADATA_PACKAGES = ("torch", "transformers", "safetensors", "Pillow")
+ORCHESTRATION_MODULES = ("PIL", "numpy")
 
 
 def _repository_src(repository_root: Path) -> Path:
@@ -132,6 +135,7 @@ def _validated_runtime_bindings(
     is_file=os.path.isfile,
     is_directory=os.path.isdir,
     metadata_version=importlib.metadata.version,
+    module_spec=None,
 ) -> dict[str, object] | None:
     """Bind the approved main lane using file and package metadata only."""
 
@@ -160,6 +164,22 @@ def _validated_runtime_bindings(
             versions[package] = metadata_version(package)
         except importlib.metadata.PackageNotFoundError as error:
             raise ValueError(f"approved runtime package metadata unavailable: {package}") from error
+    main_root = _absolute_without_symlink_resolution(MAIN_RUNTIME_ROOT)
+    module_search_path = [
+        entry
+        for entry in sys.path
+        if entry
+        and (
+            _absolute_without_symlink_resolution(entry) == main_root
+            or _absolute_without_symlink_resolution(entry).startswith(main_root + os.sep)
+        )
+    ]
+    find_module = module_spec or (lambda module: importlib.machinery.PathFinder.find_spec(module, module_search_path))
+    module_specs: dict[str, str] = {}
+    for module in ORCHESTRATION_MODULES:
+        if find_module(module) is None:
+            raise ValueError(f"approved main orchestration dependency unavailable: {module}")
+        module_specs[module] = "available"
     return {
         "main_python": MAIN_PY,
         "main_runtime_root": MAIN_RUNTIME_ROOT,
@@ -167,6 +187,7 @@ def _validated_runtime_bindings(
         "cache_bindings": dict(APPROVED_CACHE_BINDINGS),
         "offline_environment": dict(REQUIRED_OFFLINE_ENVIRONMENT),
         "package_versions": versions,
+        "orchestration_module_specs": module_specs,
     }
 
 
@@ -297,14 +318,32 @@ def _plan(args: argparse.Namespace, core) -> dict:
 
 
 def _stage_interpreter(plan: dict, stage: str) -> str:
-    if stage != "01_DINOV3_FEATURE_BANK":
+    bindings = plan.get("runtime_bindings")
+    if not isinstance(bindings, dict):
         return sys.executable
-    runtime_root = Path(plan["roots"]["dino_runtime_root"])
-    candidates = (runtime_root / "bin" / "python3", runtime_root / "bin" / "python")
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
-    raise ValueError("approved DINOv3 runtime has no bin/python3 or bin/python interpreter")
+    interpreter = str(bindings.get("main_python", ""))
+    if _absolute_without_symlink_resolution(interpreter) != _absolute_without_symlink_resolution(MAIN_PY):
+        raise ValueError(f"immutable plan does not bind approved MAIN_PY: {MAIN_PY}")
+    return interpreter
+
+
+def _stage_worker_command(
+    plan: dict,
+    stage: str,
+    worker_script: Path,
+    plan_path: Path,
+    run_root: Path,
+) -> list[str]:
+    return [
+        _stage_interpreter(plan, stage),
+        str(worker_script),
+        "--stage",
+        stage,
+        "--plan",
+        str(plan_path),
+        "--run-root",
+        str(run_root),
+    ]
 
 
 def _execute(args: argparse.Namespace, core, *, resume: bool) -> dict:
@@ -343,16 +382,13 @@ def _execute(args: argparse.Namespace, core, *, resume: bool) -> dict:
                 if stop_requested:
                     core.append_event(args.run_root.resolve(), core.progress_event(plan_id, "INTERRUPTED", stage=stage))
                     raise core.RunInterruptedError("stop requested before next stage")
-                command = [
-                    _stage_interpreter(plan, stage),
-                    str(worker_script),
-                    "--stage",
+                command = _stage_worker_command(
+                    plan,
                     stage,
-                    "--plan",
-                    str(args.run_root.resolve() / "run_plan.json"),
-                    "--run-root",
-                    str(args.run_root.resolve()),
-                ]
+                    worker_script,
+                    args.run_root.resolve() / "run_plan.json",
+                    args.run_root.resolve(),
+                )
                 process = _launch_stage_worker(command, plan, stage)
                 if process.returncode == core.RETRYABLE_EXIT_CODE:
                     raise core.IncompleteRunError(f"stage worker reported retryable resource failure: {stage}")

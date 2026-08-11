@@ -1,6 +1,6 @@
-# VEA-P2-T001D-R2 persistent Apple runbook
+# VEA-P2-T001D-R3 persistent Apple runbook
 
-Run this only after independent review of the pushed R2 commit, from the user's
+Run this only after independent review of the pushed R3 commit, from the user's
 existing tmux parent shell. The parent blocks deliberately do not enable strict
 shell options, replace or terminate the shell, install traps, or create/attach
 tmux. Strict behavior is confined to the generated child scripts.
@@ -9,13 +9,13 @@ tmux. Strict behavior is confined to the generated child scripts.
 
 ```bash
 REMOTE_URL='<reviewed repository URL>'
-REVIEWED_BRANCH='codex/vea-p2-t001d-r2-supervisor-env-readiness'
-REVIEWED_COMMIT='<40-character reviewed R2 commit>'
+REVIEWED_BRANCH='codex/vea-p2-t001d-r3-main-lane-dino-orchestration'
+REVIEWED_COMMIT='<40-character reviewed R3 commit>'
 REPO_PARENT='/home/chltjsdh/vea/p2_repos'
 RUN_PARENT='/home/chltjsdh/vea/p2_runs'
 RUN_TOKEN="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R2-$RUN_TOKEN"
-RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R2-$RUN_TOKEN"
+TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R3-$RUN_TOKEN"
+RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R3-$RUN_TOKEN"
 LAUNCH_LOG_ROOT="$RUN_PARENT/launcher-$RUN_TOKEN"
 
 MAIN_PY='/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3'
@@ -86,8 +86,13 @@ if [ "$LAUNCH_READY" -eq 1 ]; then
   if [ "$RESOURCE_PREFLIGHT" != PASS ]; then LAUNCH_READY=0; FAILED_STAGE='LOCAL_RESOURCE_PREFLIGHT'; fi
 fi
 if [ "$LAUNCH_READY" -eq 1 ]; then
-  "$MAIN_PY" - <<'PY'
+  PYTHONPATH='' "$MAIN_PY" - <<'PY'
 from importlib import metadata
+from importlib.util import find_spec
+missing = [module for module in ("PIL", "numpy") if find_spec(module) is None]
+if missing:
+    raise SystemExit("MAIN_ORCHESTRATION_DEPENDENCY_UNAVAILABLE=" + ",".join(missing))
+print("MAIN_ORCHESTRATION_MODULES PIL=available numpy=available")
 for package in ("torch", "transformers", "safetensors", "Pillow"):
     print(f"PACKAGE_METADATA {package}={metadata.version(package)}")
 print("MAIN_RUNTIME_METADATA_PREFLIGHT=PASS")
@@ -105,6 +110,12 @@ The local resource preflight checks the exact TinyLLaVA revision
 dataset root, and the immutable manifest using directory/file checks only. No
 Torch, Transformers, Safetensors, Pillow, model, or CUDA module has been
 imported before the GPU gate.
+
+The failed R2 run root is immutable failure evidence: do not resume it, do not
+reuse it, and do not execute its `EXACT_MANUAL_RESUME`. This R3 block creates a
+fresh persistent repository, run root, immutable plan ID, and supervisor log.
+The retained first 16-image DINO chunk is the only smoke and remains a real
+checkpoint; run no separate model smoke.
 
 ## 2. Plan exactly once, before GPU waiting
 
@@ -303,7 +314,8 @@ printf 'RESOURCE_RESUMES=%s\nVERIFY_EXIT_CODE=%s\nFINALIZE_EXIT_CODE=%s\n' \
 printf 'EXACT_MANUAL_RESUME=%q %q resume' "$MAIN_PY" "$TASK_REPOSITORY/scripts/run_resumable_anchor_transport.py"
 printf ' %q' "${COMMON[@]}"
 printf '\nRESULT_PATH=%s\n' "$RUN_ROOT/final/result.json"
-if [ -d "$RUN_ROOT/final" ]; then sha256sum "$RUN_ROOT"/final/*; fi
+FINAL_ARTIFACTS=("$RUN_ROOT"/final/*)
+if [ -d "$RUN_ROOT/final" ] && [ -e "${FINAL_ARTIFACTS[0]}" ]; then sha256sum "${FINAL_ARTIFACTS[@]}"; fi
 printf 'WORKER_EXIT_CODE=%s\n' "$WORKER_EXIT_CODE"
 printf 'TEE_EXIT_CODE=%s\n' "$TEE_EXIT_CODE"
 printf 'VEA_P2_EXECUTION=%s\n' "$VEA_P2_EXECUTION"

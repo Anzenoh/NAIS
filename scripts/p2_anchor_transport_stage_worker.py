@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -23,10 +24,60 @@ from typing import Any, Callable, Mapping, Sequence
 
 _STOP_REQUESTED = False
 _CURRENT_UNIT: Mapping[str, Any] | None = None
+APPROVED_MAIN_PY = "/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3"
+STAGE01 = "01_DINOV3_FEATURE_BANK"
+ORCHESTRATION_FAILURE_CLASS = "orchestration runtime dependency or interpreter mismatch"
 
 
 class StageInterrupted(RuntimeError):
     pass
+
+
+class StageOrchestrationContractError(RuntimeError):
+    pass
+
+
+def _absolute_without_symlink_resolution(value: str | os.PathLike[str]) -> str:
+    return os.path.normpath(os.path.abspath(os.fspath(value)))
+
+
+def _validate_stage01_orchestration_runtime(
+    plan: Mapping[str, Any],
+    stage: str,
+    *,
+    executable: str | None = None,
+    module_spec: Callable[[str], object | None] = importlib.util.find_spec,
+    is_directory: Callable[[str | os.PathLike[str]], bool] = os.path.isdir,
+) -> dict[str, str] | None:
+    """Fail before UNIT_STARTED unless real Stage 01 orchestration is main-lane ready."""
+
+    bindings = plan.get("runtime_bindings")
+    if stage != STAGE01 or not isinstance(bindings, Mapping):
+        return None
+    planned = str(bindings.get("main_python", ""))
+    observed = executable or sys.executable
+    approved = _absolute_without_symlink_resolution(APPROVED_MAIN_PY)
+    if _absolute_without_symlink_resolution(planned) != approved:
+        raise StageOrchestrationContractError(
+            f"Stage 01 orchestration interpreter mismatch: plan must bind {APPROVED_MAIN_PY}"
+        )
+    if _absolute_without_symlink_resolution(observed) != approved:
+        raise StageOrchestrationContractError(
+            f"Stage 01 orchestration interpreter mismatch: expected={APPROVED_MAIN_PY} observed={observed}"
+        )
+    availability = bindings.get("orchestration_module_specs")
+    for module in ("PIL", "numpy"):
+        if not isinstance(availability, Mapping) or availability.get(module) != "available" or module_spec(module) is None:
+            raise StageOrchestrationContractError(
+                f"Stage 01 orchestration runtime dependency unavailable: {module}"
+            )
+    for root_name in ("dino_runtime_root", "dino_snapshot_root"):
+        value = str(plan.get("roots", {}).get(root_name, ""))
+        if not value or not Path(value).is_absolute() or not is_directory(value):
+            raise StageOrchestrationContractError(
+                f"Stage 01 approved DINO binding unavailable: {root_name}={value}"
+            )
+    return {"interpreter": planned, "PIL": "available", "numpy": "available"}
 
 
 def _unit_started(core, run_root: Path, plan_id: str, unit: Mapping[str, Any]) -> None:
@@ -82,12 +133,17 @@ def _bootstrap(args: argparse.Namespace):
     if isinstance(runtime_bindings, dict):
         overlay = os.path.normpath(os.path.abspath(str(runtime_bindings["main_overlay"])))
         main_root = os.path.normpath(os.path.abspath(str(runtime_bindings["main_runtime_root"])))
-        observed_paths = [os.path.normpath(os.path.abspath(entry)) for entry in sys.path if entry]
-        if args.stage == "01_DINOV3_FEATURE_BANK":
-            if any(path == overlay or path.startswith(main_root + os.sep) for path in observed_paths):
-                raise core.ContractError("DINO stage inherited main-lane site packages")
-        elif overlay not in observed_paths:
+        inherited_paths = [
+            os.path.normpath(os.path.abspath(entry))
+            for entry in os.environ.get("PYTHONPATH", "").split(os.pathsep)
+            if entry
+        ]
+        if args.stage == STAGE01:
+            if any(path == overlay or path.startswith(main_root + os.sep) for path in inherited_paths):
+                raise StageOrchestrationContractError("Stage 01 inherited forbidden main-lane PYTHONPATH entries")
+        elif inherited_paths.count(overlay) != 1:
             raise core.ContractError("main-lane stage is missing the approved TinyLLaVA overlay")
+    _validate_stage01_orchestration_runtime(plan, args.stage)
     lock_path = run_root / "coordinator.lock"
     if not lock_path.is_file():
         raise core.AmbiguousLockError("stage worker requires the live coordinator lock")
@@ -97,6 +153,40 @@ def _bootstrap(args: argparse.Namespace):
     if core.process_liveness(lock["host"], int(lock["pid"]), lock.get("process_start_identity")) is not True:
         raise core.AmbiguousLockError("coordinator lock liveness cannot be proven by the stage worker")
     return core, plan, plan_id, run_root
+
+
+def _record_stage01_bootstrap_failure(args: argparse.Namespace, error: StageOrchestrationContractError) -> int:
+    run_root = args.run_root.resolve()
+    document = json.loads(args.plan.resolve().read_bytes())
+    repository = Path(document["roots"]["repository_root"]).resolve()
+    source = str(repository / "src")
+    if source not in sys.path:
+        sys.path.insert(0, source)
+    from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as core
+
+    plan, plan_id = core.load_bound_plan(run_root)
+    core.append_event(
+        run_root,
+        core.progress_event(
+            plan_id,
+            "NONRETRYABLE_FAILURE",
+            stage=STAGE01,
+            cause=type(error).__name__,
+            failure_class=ORCHESTRATION_FAILURE_CLASS,
+        ),
+    )
+    record = {
+        **core.failure_record(error, plan_id, None),
+        "stage": STAGE01,
+        "failure_class": ORCHESTRATION_FAILURE_CLASS,
+        "coordinates": {},
+        "last_valid_unit": None,
+        "exact_log": "coordinator-captured stage-worker stdout/stderr",
+    }
+    path = core.write_failure_record(run_root, record)
+    record["failure_record"] = str(path)
+    print(json.dumps(record, sort_keys=True, separators=(",", ":")), file=sys.stderr)
+    return 1
 
 
 def _units(plan: Mapping[str, Any], stage: str) -> list[dict[str, Any]]:
@@ -689,7 +779,10 @@ def _resource_failure(error: BaseException) -> bool:
 def main(argv: Sequence[str] | None = None) -> int:
     global _STOP_REQUESTED
     args = build_parser().parse_args(argv)
-    core, plan, plan_id, run_root = _bootstrap(args)
+    try:
+        core, plan, plan_id, run_root = _bootstrap(args)
+    except StageOrchestrationContractError as error:
+        return _record_stage01_bootstrap_failure(args, error)
     def request_stop(signum, frame) -> None:
         global _STOP_REQUESTED
         _STOP_REQUESTED = True

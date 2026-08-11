@@ -20,7 +20,7 @@ from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as ra
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "configs/vlm_compat/p2_universal_anchor_transport_v0.json"
 MANIFEST_PATH = ROOT / "data/manifests/p1_1000.jsonl"
-BASELINE = "ad86127c5e7d23c43a3abbec317c10ece4e6c5a7"
+BASELINE = "a3d4cc57c0f2edde8639d718a3f2ef0c3dfe4275"
 
 
 def config():
@@ -543,7 +543,9 @@ def test_stage_subprocess_environment_isolation_is_injected():
     }
     value = {"runtime_bindings": binding}
     base = {
-        "PYTHONPATH": os.pathsep.join((coordinator.MAIN_OVERLAY, "/approved/other")),
+        "PYTHONPATH": os.pathsep.join(
+            (coordinator.MAIN_OVERLAY, coordinator.MAIN_RUNTIME_ROOT + "/lib/python3.12/site-packages", "/approved/other")
+        ),
         **coordinator.APPROVED_CACHE_BINDINGS,
         **coordinator.REQUIRED_OFFLINE_ENVIRONMENT,
     }
@@ -560,8 +562,24 @@ def test_stage_subprocess_environment_isolation_is_injected():
         runner=runner, base_environment=base,
     )
     assert coordinator.MAIN_OVERLAY not in captured[0].get("PYTHONPATH", "")
-    assert coordinator.MAIN_OVERLAY in captured[1]["PYTHONPATH"].split(os.pathsep)
+    assert coordinator.MAIN_RUNTIME_ROOT not in captured[0].get("PYTHONPATH", "")
+    assert captured[1]["PYTHONPATH"].split(os.pathsep).count(coordinator.MAIN_OVERLAY) == 1
     assert captured[0]["HF_HUB_OFFLINE"] == captured[1]["HF_HUB_OFFLINE"] == "1"
+
+
+@pytest.mark.parametrize("stage", rat.STAGES[1:7])
+def test_real_stage_worker_command_uses_immutable_main_python(stage, tmp_path):
+    coordinator = coordinator_module(f"p2_coordinator_interpreter_{stage}")
+    value = {"runtime_bindings": {"main_python": coordinator.MAIN_PY}}
+    command = coordinator._stage_worker_command(
+        value, stage, tmp_path / "worker.py", tmp_path / "run_plan.json", tmp_path / "run"
+    )
+    assert command[0] == coordinator.MAIN_PY
+
+
+def test_fake_plan_retains_current_test_interpreter():
+    coordinator = coordinator_module("p2_coordinator_fake_interpreter")
+    assert coordinator._stage_interpreter({"runtime_bindings": None}, "01_DINOV3_FEATURE_BANK") == sys.executable
 
 
 def test_approved_runtime_binding_uses_metadata_only():
@@ -578,9 +596,145 @@ def test_approved_runtime_binding_uses_metadata_only():
         is_file=lambda path: True,
         is_directory=lambda path: True,
         metadata_version=lambda package: f"metadata-{package}",
+        module_spec=lambda module: object(),
     )
     assert result["main_python"] == coordinator.MAIN_PY
     assert result["main_overlay"] == coordinator.MAIN_OVERLAY
+    assert result["orchestration_module_specs"] == {"PIL": "available", "numpy": "available"}
+
+
+def test_approved_runtime_module_preflight_searches_only_main_runtime(monkeypatch):
+    coordinator = coordinator_module("p2_coordinator_main_module_search")
+    main_site = coordinator.MAIN_RUNTIME_ROOT + "/lib/python3.12/site-packages"
+    monkeypatch.setattr(coordinator.sys, "path", [coordinator.MAIN_OVERLAY, main_site, "/outside"])
+    searched = []
+
+    def find_spec(module, paths):
+        searched.append((module, list(paths)))
+        return object()
+
+    monkeypatch.setattr(coordinator.importlib.machinery.PathFinder, "find_spec", find_spec)
+    environment = {
+        "PYTHONPATH": coordinator.MAIN_OVERLAY,
+        **coordinator.APPROVED_CACHE_BINDINGS,
+        **coordinator.REQUIRED_OFFLINE_ENVIRONMENT,
+    }
+    result = coordinator._validated_runtime_bindings(
+        "cuda:0",
+        executable=coordinator.MAIN_PY,
+        environment=environment,
+        is_file=lambda path: True,
+        is_directory=lambda path: True,
+        metadata_version=lambda package: f"metadata-{package}",
+    )
+    assert result["orchestration_module_specs"] == {"PIL": "available", "numpy": "available"}
+    assert searched == [("PIL", [main_site]), ("numpy", [main_site])]
+
+
+@pytest.mark.parametrize("missing", ["PIL", "numpy"])
+def test_approved_runtime_binding_fails_on_missing_orchestration_module(missing):
+    coordinator = coordinator_module(f"p2_coordinator_missing_{missing}")
+    environment = {
+        "PYTHONPATH": coordinator.MAIN_OVERLAY,
+        **coordinator.APPROVED_CACHE_BINDINGS,
+        **coordinator.REQUIRED_OFFLINE_ENVIRONMENT,
+    }
+    with pytest.raises(ValueError, match=rf"orchestration dependency unavailable: {missing}"):
+        coordinator._validated_runtime_bindings(
+            "cuda:0",
+            executable=coordinator.MAIN_PY,
+            environment=environment,
+            is_file=lambda path: True,
+            is_directory=lambda path: True,
+            metadata_version=lambda package: f"metadata-{package}",
+            module_spec=lambda module: None if module == missing else object(),
+        )
+
+
+def test_stage01_bootstrap_runtime_contract_accepts_main_and_rejects_dino(tmp_path):
+    worker_spec = importlib.util.spec_from_file_location(
+        "p2_worker_orchestration_contract", ROOT / "scripts/p2_anchor_transport_stage_worker.py"
+    )
+    worker = importlib.util.module_from_spec(worker_spec)
+    assert worker_spec.loader is not None
+    worker_spec.loader.exec_module(worker)
+    runtime = tmp_path / "dino-runtime"
+    snapshot = tmp_path / "dino-snapshot"
+    runtime.mkdir()
+    snapshot.mkdir()
+    value = {
+        "runtime_bindings": {
+            "main_python": worker.APPROVED_MAIN_PY,
+            "orchestration_module_specs": {"PIL": "available", "numpy": "available"},
+        },
+        "roots": {"dino_runtime_root": str(runtime), "dino_snapshot_root": str(snapshot)},
+    }
+    accepted = worker._validate_stage01_orchestration_runtime(
+        value,
+        worker.STAGE01,
+        executable=worker.APPROVED_MAIN_PY,
+        module_spec=lambda module: object(),
+    )
+    assert accepted == {"interpreter": worker.APPROVED_MAIN_PY, "PIL": "available", "numpy": "available"}
+    with pytest.raises(worker.StageOrchestrationContractError, match="orchestration interpreter mismatch"):
+        worker._validate_stage01_orchestration_runtime(
+            value,
+            worker.STAGE01,
+            executable=str(runtime / "bin/python3"),
+            module_spec=lambda module: object(),
+        )
+
+
+@pytest.mark.parametrize("missing", ["PIL", "numpy"])
+def test_stage01_bootstrap_runtime_contract_fails_before_unit_on_missing_module(tmp_path, missing):
+    worker_spec = importlib.util.spec_from_file_location(
+        f"p2_worker_missing_{missing}", ROOT / "scripts/p2_anchor_transport_stage_worker.py"
+    )
+    worker = importlib.util.module_from_spec(worker_spec)
+    assert worker_spec.loader is not None
+    worker_spec.loader.exec_module(worker)
+    root = tmp_path / "root"
+    root.mkdir()
+    value = {
+        "runtime_bindings": {
+            "main_python": worker.APPROVED_MAIN_PY,
+            "orchestration_module_specs": {"PIL": "available", "numpy": "available"},
+        },
+        "roots": {"dino_runtime_root": str(root), "dino_snapshot_root": str(root)},
+    }
+    with pytest.raises(worker.StageOrchestrationContractError, match=rf"dependency unavailable: {missing}"):
+        worker._validate_stage01_orchestration_runtime(
+            value,
+            worker.STAGE01,
+            executable=worker.APPROVED_MAIN_PY,
+            module_spec=lambda module: None if module == missing else object(),
+        )
+
+
+def test_stage01_bootstrap_failure_records_bounded_nonretryable_evidence(tmp_path):
+    worker_spec = importlib.util.spec_from_file_location(
+        "p2_worker_bootstrap_evidence", ROOT / "scripts/p2_anchor_transport_stage_worker.py"
+    )
+    worker = importlib.util.module_from_spec(worker_spec)
+    assert worker_spec.loader is not None
+    worker_spec.loader.exec_module(worker)
+    value = plan(tmp_path)
+    run_root = tmp_path / "bootstrap-failure-run"
+    plan_id = rat.initialize_run(run_root, value)
+    args = SimpleNamespace(run_root=run_root, plan=run_root / "run_plan.json")
+    error = worker.StageOrchestrationContractError("Stage 01 orchestration interpreter mismatch")
+    assert worker._record_stage01_bootstrap_failure(args, error) == 1
+    events = [json.loads(line) for line in (run_root / "progress.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert events[-1]["event_type"] == "NONRETRYABLE_FAILURE"
+    assert events[-1]["stage"] == worker.STAGE01
+    assert events[-1]["failure_class"] == worker.ORCHESTRATION_FAILURE_CLASS
+    assert not any(event["event_type"] == "UNIT_STARTED" for event in events)
+    failure_files = list((run_root / "failures").glob("*.json"))
+    assert len(failure_files) == 1
+    record = json.loads(failure_files[0].read_text(encoding="utf-8"))
+    assert record["plan_id"] == plan_id
+    assert record["stage"] == worker.STAGE01
+    assert record["failure_class"] == worker.ORCHESTRATION_FAILURE_CLASS
 
 
 def _parent_shell_without_generated_children(runbook: str) -> str:
@@ -698,6 +852,22 @@ def test_runbook_resource_resume_and_pipeline_status_contract():
     assert '[ "$WORKER_EXIT_CODE" -eq 130 ]' in text
     assert "FINAL_VERIFY_EXIT_CODE" in text
     assert "EXACT_MANUAL_RESUME=%q %q resume" in text
+
+
+def test_r3_runbook_fresh_plan_import_light_modules_and_safe_final_hash():
+    text = (ROOT / "reports/runbooks/VEA-P2-T001D-apple-resumable-anchor-transport.md").read_text(encoding="utf-8")
+    assert "REVIEWED_BRANCH='codex/vea-p2-t001d-r3-main-lane-dino-orchestration'" in text
+    assert "REVIEWED_COMMIT='<40-character reviewed R3 commit>'" in text
+    assert 'TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R3-$RUN_TOKEN"' in text
+    assert 'RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R3-$RUN_TOKEN"' in text
+    assert "do not resume it" in text and "do not execute its `EXACT_MANUAL_RESUME`" in text
+    assert "from importlib.util import find_spec" in text
+    assert 'find_spec(module)' in text
+    assert "PYTHONPATH='' \"$MAIN_PY\" - <<'PY'" in text
+    assert "import PIL" not in text and "import numpy" not in text
+    assert 'FINAL_ARTIFACTS=("$RUN_ROOT"/final/*)' in text
+    assert '[ -e "${FINAL_ARTIFACTS[0]}" ]' in text
+    assert 'sha256sum "${FINAL_ARTIFACTS[@]}"' in text
 
 
 def test_signal_flag_stops_only_after_atomic_unit(tmp_path):
