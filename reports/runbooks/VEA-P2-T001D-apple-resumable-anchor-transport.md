@@ -1,6 +1,6 @@
-# VEA-P2-T001D-R1 persistent Apple runbook
+# VEA-P2-T001D-R2 persistent Apple runbook
 
-Run this only after independent review of the pushed R1 commit, from the user's
+Run this only after independent review of the pushed R2 commit, from the user's
 existing tmux parent shell. The parent blocks deliberately do not enable strict
 shell options, replace or terminate the shell, install traps, or create/attach
 tmux. Strict behavior is confined to the generated child scripts.
@@ -9,13 +9,13 @@ tmux. Strict behavior is confined to the generated child scripts.
 
 ```bash
 REMOTE_URL='<reviewed repository URL>'
-REVIEWED_BRANCH='codex/vea-p2-t001d-r1-real-run-readiness'
-REVIEWED_COMMIT='<40-character reviewed R1 commit>'
+REVIEWED_BRANCH='codex/vea-p2-t001d-r2-supervisor-env-readiness'
+REVIEWED_COMMIT='<40-character reviewed R2 commit>'
 REPO_PARENT='/home/chltjsdh/vea/p2_repos'
 RUN_PARENT='/home/chltjsdh/vea/p2_runs'
 RUN_TOKEN="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R1-$RUN_TOKEN"
-RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R1-$RUN_TOKEN"
+TASK_REPOSITORY="$REPO_PARENT/VEA-P2-T001D-R2-$RUN_TOKEN"
+RUN_ROOT="$RUN_PARENT/VEA-P2-T001D-R2-$RUN_TOKEN"
 LAUNCH_LOG_ROOT="$RUN_PARENT/launcher-$RUN_TOKEN"
 
 MAIN_PY='/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3'
@@ -30,6 +30,9 @@ DINOV3_RUNTIME_ROOT='<existing approved DINOv3 runtime root>'
 DINOV3_SNAPSHOT_ROOT='<existing materialized DINOv3 snapshot root>'
 DEVICE='cuda:0'
 GPU_INDEX='0'
+TINYLLAVA_SNAPSHOT="$HF_HUB_CACHE/models--jiajunlong--TinyLLaVA-OpenELM-450M-CLIP-0.55B/snapshots/0bff7b92d5b9ef4520c61b1f7872d7d1e13537a6"
+CLIP_SNAPSHOT="$HF_HUB_CACHE/models--openai--clip-vit-base-patch16/snapshots/57c216476eefef5ab752ec549e440a49ae4ae5f3"
+SIGLIP2_SNAPSHOT="$HF_HUB_CACHE/models--google--siglip2-base-patch16-224/snapshots/75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2"
 
 HF_HUB_OFFLINE=1
 TRANSFORMERS_OFFLINE=1
@@ -38,56 +41,78 @@ HF_HUB_DISABLE_TELEMETRY=1
 DO_NOT_TRACK=1
 PYTHONNOUSERSITE=1
 PYTHONPATH="$MAIN_OVERLAY${PYTHONPATH:+:$PYTHONPATH}"
-export MAIN_PY MAIN_OVERLAY TRANSFORMERS_CACHE HF_MODULES_CACHE HF_HOME HF_HUB_CACHE
+export RUN_TOKEN GPU_INDEX MAIN_PY MAIN_OVERLAY TRANSFORMERS_CACHE HF_MODULES_CACHE HF_HOME HF_HUB_CACHE
 export HF_HUB_OFFLINE TRANSFORMERS_OFFLINE HF_DATASETS_OFFLINE HF_HUB_DISABLE_TELEMETRY DO_NOT_TRACK
-export PYTHONNOUSERSITE PYTHONPATH DATASET_ROOT CACHE_ROOT DINOV3_RUNTIME_ROOT DINOV3_SNAPSHOT_ROOT DEVICE GPU_INDEX
+export PYTHONNOUSERSITE PYTHONPATH DATASET_ROOT CACHE_ROOT DINOV3_RUNTIME_ROOT DINOV3_SNAPSHOT_ROOT DEVICE
 export TASK_REPOSITORY RUN_ROOT LAUNCH_LOG_ROOT REVIEWED_COMMIT REVIEWED_BRANCH
 
+LAUNCH_READY=1
+FAILED_STAGE='NOT_STARTED'
+SUPERVISOR_PID='NOT_STARTED'
 mkdir -p "$REPO_PARENT" "$RUN_PARENT" "$LAUNCH_LOG_ROOT"
-git clone --branch "$REVIEWED_BRANCH" --single-branch "$REMOTE_URL" "$TASK_REPOSITORY"
-CLONE_RC=$?
-OBSERVED_BRANCH="$(git -C "$TASK_REPOSITORY" branch --show-current 2>/dev/null)"
-OBSERVED_COMMIT="$(git -C "$TASK_REPOSITORY" rev-parse HEAD 2>/dev/null)"
-OBSERVED_DIRTY="$(git -C "$TASK_REPOSITORY" status --porcelain 2>/dev/null)"
-if [ "$CLONE_RC" -eq 0 ] && [ "$OBSERVED_BRANCH" = "$REVIEWED_BRANCH" ] && \
-   [ "$OBSERVED_COMMIT" = "$REVIEWED_COMMIT" ] && [ -z "$OBSERVED_DIRTY" ]; then
-  CHECKOUT_PREFLIGHT=PASS
-else
-  CHECKOUT_PREFLIGHT=FAILED
+DIRECTORY_RC=$?
+if [ "$DIRECTORY_RC" -ne 0 ]; then LAUNCH_READY=0; FAILED_STAGE='DIRECTORY_CREATION'; fi
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  git clone --branch "$REVIEWED_BRANCH" --single-branch "$REMOTE_URL" "$TASK_REPOSITORY"
+  CLONE_RC=$?
+  if [ "$CLONE_RC" -eq 0 ]; then
+    OBSERVED_BRANCH="$(git -C "$TASK_REPOSITORY" branch --show-current 2>/dev/null)"
+    OBSERVED_COMMIT="$(git -C "$TASK_REPOSITORY" rev-parse HEAD 2>/dev/null)"
+    OBSERVED_DIRTY="$(git -C "$TASK_REPOSITORY" status --porcelain 2>/dev/null)"
+  else
+    OBSERVED_BRANCH='CLONE_FAILED'; OBSERVED_COMMIT='CLONE_FAILED'; OBSERVED_DIRTY='CLONE_FAILED'
+  fi
+  if [ "$CLONE_RC" -eq 0 ] && [ "$OBSERVED_BRANCH" = "$REVIEWED_BRANCH" ] && \
+     [ "$OBSERVED_COMMIT" = "$REVIEWED_COMMIT" ] && [ -z "$OBSERVED_DIRTY" ]; then
+    CHECKOUT_PREFLIGHT=PASS
+  else
+    CHECKOUT_PREFLIGHT=FAILED; LAUNCH_READY=0; FAILED_STAGE='REVIEWED_CHECKOUT'
+  fi
+  printf 'CHECKOUT_PREFLIGHT=%s\n' "$CHECKOUT_PREFLIGHT"
 fi
-printf 'CHECKOUT_PREFLIGHT=%s\n' "$CHECKOUT_PREFLIGHT"
-
-"$MAIN_PY" - <<'PY'
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  RESOURCE_PREFLIGHT=PASS
+  for REQUIRED_DIRECTORY in \
+    "$MAIN_OVERLAY" "$TRANSFORMERS_CACHE" "$HF_MODULES_CACHE" "$HF_HOME" "$HF_HUB_CACHE" \
+    "$TINYLLAVA_SNAPSHOT" "$CLIP_SNAPSHOT" "$SIGLIP2_SNAPSHOT" \
+    "$DINOV3_RUNTIME_ROOT" "$DINOV3_SNAPSHOT_ROOT" "$DATASET_ROOT"; do
+    if [ ! -d "$REQUIRED_DIRECTORY" ]; then RESOURCE_PREFLIGHT=FAILED; fi
+  done
+  for REQUIRED_FILE in "$MAIN_PY" "$TASK_REPOSITORY/data/manifests/p1_1000.jsonl"; do
+    if [ ! -f "$REQUIRED_FILE" ]; then RESOURCE_PREFLIGHT=FAILED; fi
+  done
+  if [ ! -x "$MAIN_PY" ]; then RESOURCE_PREFLIGHT=FAILED; fi
+  printf 'RESOURCE_PREFLIGHT=%s\n' "$RESOURCE_PREFLIGHT"
+  if [ "$RESOURCE_PREFLIGHT" != PASS ]; then LAUNCH_READY=0; FAILED_STAGE='LOCAL_RESOURCE_PREFLIGHT'; fi
+fi
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  "$MAIN_PY" - <<'PY'
 from importlib import metadata
-from pathlib import Path
-import os
-required_files = [Path(os.environ["MAIN_PY"])]
-required_dirs = [
-    Path(os.environ["MAIN_OVERLAY"]),
-    Path(os.environ["TRANSFORMERS_CACHE"]),
-    Path(os.environ["HF_MODULES_CACHE"]),
-    Path(os.environ["HF_HOME"]),
-    Path(os.environ["HF_HUB_CACHE"]),
-]
-assert all(path.is_file() for path in required_files), "approved main interpreter file is unavailable"
-assert all(path.is_dir() for path in required_dirs), "approved overlay/cache directory is unavailable"
 for package in ("torch", "transformers", "safetensors", "Pillow"):
     print(f"PACKAGE_METADATA {package}={metadata.version(package)}")
 print("MAIN_RUNTIME_METADATA_PREFLIGHT=PASS")
 PY
-RUNTIME_PREFLIGHT_RC=$?
-printf 'RUNTIME_PREFLIGHT_EXIT_CODE=%s\n' "$RUNTIME_PREFLIGHT_RC"
+  RUNTIME_PREFLIGHT_RC=$?
+  printf 'RUNTIME_PREFLIGHT_EXIT_CODE=%s\n' "$RUNTIME_PREFLIGHT_RC"
+  if [ "$RUNTIME_PREFLIGHT_RC" -ne 0 ]; then LAUNCH_READY=0; FAILED_STAGE='MAIN_RUNTIME_METADATA_PREFLIGHT'; fi
+fi
 ```
 
-Proceed only when checkout and runtime metadata preflight both pass. No Torch,
-Transformers, Safetensors, Pillow, model, or CUDA module has been imported.
+The local resource preflight checks the exact TinyLLaVA revision
+`0bff7b92d5b9ef4520c61b1f7872d7d1e13537a6`, CLIP revision
+`57c216476eefef5ab752ec549e440a49ae4ae5f3`, SigLIP2 revision
+`75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2`, both approved DINO roots, the
+dataset root, and the immutable manifest using directory/file checks only. No
+Torch, Transformers, Safetensors, Pillow, model, or CUDA module has been
+imported before the GPU gate.
 
 ## 2. Plan exactly once, before GPU waiting
 
 ```bash
-PLAN_STDOUT="$LAUNCH_LOG_ROOT/plan-$RUN_TOKEN.stdout.json"
-PLAN_STDERR="$LAUNCH_LOG_ROOT/plan-$RUN_TOKEN.stderr.log"
-"$MAIN_PY" "$TASK_REPOSITORY/scripts/run_resumable_anchor_transport.py" plan \
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  PLAN_STDOUT="$LAUNCH_LOG_ROOT/plan-$RUN_TOKEN.stdout.json"
+  PLAN_STDERR="$LAUNCH_LOG_ROOT/plan-$RUN_TOKEN.stderr.log"
+  "$MAIN_PY" "$TASK_REPOSITORY/scripts/run_resumable_anchor_transport.py" plan \
   --config "$TASK_REPOSITORY/configs/vlm_compat/p2_universal_anchor_transport_v0.json" \
   --manifest "$TASK_REPOSITORY/data/manifests/p1_1000.jsonl" \
   --dataset-root "$DATASET_ROOT" \
@@ -97,20 +122,24 @@ PLAN_STDERR="$LAUNCH_LOG_ROOT/plan-$RUN_TOKEN.stderr.log"
   --dinov3-snapshot-root "$DINOV3_SNAPSHOT_ROOT" \
   --run-root "$RUN_ROOT" \
   --device "$DEVICE" \
-  >"$PLAN_STDOUT" 2>"$PLAN_STDERR"
-PLAN_RC=$?
-printf 'PLAN_EXIT_CODE=%s\nPLAN_STDOUT=%s\nPLAN_STDERR=%s\n' "$PLAN_RC" "$PLAN_STDOUT" "$PLAN_STDERR"
+    >"$PLAN_STDOUT" 2>"$PLAN_STDERR"
+  PLAN_RC=$?
+  printf 'PLAN_EXIT_CODE=%s\nPLAN_STDOUT=%s\nPLAN_STDERR=%s\n' "$PLAN_RC" "$PLAN_STDOUT" "$PLAN_STDERR"
+  if [ "$PLAN_RC" -ne 0 ]; then LAUNCH_READY=0; FAILED_STAGE='IMMUTABLE_PLAN'; fi
+fi
 ```
 
-Proceed only when `PLAN_RC=0`. The repository and run root are persistent and
-must remain at the exact planned paths. The first retained chunk is each
-encoder's smoke; do not launch a throwaway model smoke.
+Only a successful plan preserves the launch-ready state. The repository and run
+root are persistent and must remain at the exact planned paths. The first
+retained chunk is each encoder's smoke; do not launch a throwaway model smoke.
 
 ## 3. Generate the established exclusive-or-stable-shared GPU gate
 
 ```bash
-GPU_GATE_SCRIPT="$LAUNCH_LOG_ROOT/gpu-gate-$RUN_TOKEN.sh"
-cat >"$GPU_GATE_SCRIPT" <<'VEA_GPU_GATE'
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  GPU_GATE_SCRIPT="$LAUNCH_LOG_ROOT/gpu-gate-$RUN_TOKEN.sh"
+  export GPU_GATE_SCRIPT
+  cat >"$GPU_GATE_SCRIPT" <<'VEA_GPU_GATE'
 #!/usr/bin/env bash
 set -u
 QUERY_FAILURES=0
@@ -174,17 +203,24 @@ while true; do
   sleep 30
 done
 VEA_GPU_GATE
-chmod 700 "$GPU_GATE_SCRIPT"
+  GPU_GATE_WRITE_RC=$?
+  if [ "$GPU_GATE_WRITE_RC" -eq 0 ]; then chmod 700 "$GPU_GATE_SCRIPT"; GPU_GATE_CHMOD_RC=$?; else GPU_GATE_CHMOD_RC=1; fi
+  if [ "$GPU_GATE_WRITE_RC" -ne 0 ] || [ "$GPU_GATE_CHMOD_RC" -ne 0 ]; then
+    LAUNCH_READY=0
+    FAILED_STAGE='GPU_GATE_SCRIPT_CREATION'
+  fi
+fi
 ```
 
 ## 4. Generate and detach the resource-only resume supervisor
 
 ```bash
-SUPERVISOR="$LAUNCH_LOG_ROOT/supervisor-$RUN_TOKEN.sh"
-SUPERVISOR_LOG="$LAUNCH_LOG_ROOT/supervisor-$RUN_TOKEN.log"
-WORKER_LOG="$LAUNCH_LOG_ROOT/worker-$RUN_TOKEN.log"
-export GPU_GATE_SCRIPT SUPERVISOR_LOG WORKER_LOG
-cat >"$SUPERVISOR" <<'VEA_T001D_SUPERVISOR'
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  SUPERVISOR="$LAUNCH_LOG_ROOT/supervisor-$RUN_TOKEN.sh"
+  SUPERVISOR_LOG="$LAUNCH_LOG_ROOT/supervisor-$RUN_TOKEN.log"
+  WORKER_LOG="$LAUNCH_LOG_ROOT/worker-$RUN_TOKEN.log"
+  export WORKER_LOG
+  cat >"$SUPERVISOR" <<'VEA_T001D_SUPERVISOR'
 #!/usr/bin/env bash
 set -u -o pipefail
 COMMON=(
@@ -273,26 +309,50 @@ printf 'TEE_EXIT_CODE=%s\n' "$TEE_EXIT_CODE"
 printf 'VEA_P2_EXECUTION=%s\n' "$VEA_P2_EXECUTION"
 printf 'TMUX_PARENT_SHELL=ALIVE\n'
 VEA_T001D_SUPERVISOR
-chmod 700 "$SUPERVISOR"
-
-bash -n "$GPU_GATE_SCRIPT"
-GPU_GATE_SYNTAX_RC=$?
-bash -n "$SUPERVISOR"
-SUPERVISOR_SYNTAX_RC=$?
-printf 'GPU_GATE_SYNTAX_RC=%s\nSUPERVISOR_SYNTAX_RC=%s\n' "$GPU_GATE_SYNTAX_RC" "$SUPERVISOR_SYNTAX_RC"
-if [ "$GPU_GATE_SYNTAX_RC" -eq 0 ] && [ "$SUPERVISOR_SYNTAX_RC" -eq 0 ]; then
-  nohup setsid bash "$SUPERVISOR" >"$SUPERVISOR_LOG" 2>&1 < /dev/null &
-  SUPERVISOR_PID=$!
-else
-  SUPERVISOR_PID='NOT_STARTED'
+  SUPERVISOR_WRITE_RC=$?
+  if [ "$SUPERVISOR_WRITE_RC" -eq 0 ]; then chmod 700 "$SUPERVISOR"; SUPERVISOR_CHMOD_RC=$?; else SUPERVISOR_CHMOD_RC=1; fi
+  if [ "$SUPERVISOR_WRITE_RC" -ne 0 ] || [ "$SUPERVISOR_CHMOD_RC" -ne 0 ]; then
+    LAUNCH_READY=0
+    FAILED_STAGE='SUPERVISOR_SCRIPT_CREATION'
+  fi
 fi
-printf 'SUPERVISOR_PID=%s\nSUPERVISOR_LOG=%s\nWORKER_LOG=%s\nRUN_ROOT=%s\n' \
-  "$SUPERVISOR_PID" "$SUPERVISOR_LOG" "$WORKER_LOG" "$RUN_ROOT"
+
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  bash -n "$GPU_GATE_SCRIPT"
+  GPU_GATE_SYNTAX_RC=$?
+  bash -n "$SUPERVISOR"
+  SUPERVISOR_SYNTAX_RC=$?
+  printf 'GPU_GATE_SYNTAX_RC=%s\nSUPERVISOR_SYNTAX_RC=%s\n' "$GPU_GATE_SYNTAX_RC" "$SUPERVISOR_SYNTAX_RC"
+  if [ "$GPU_GATE_SYNTAX_RC" -ne 0 ] || [ "$SUPERVISOR_SYNTAX_RC" -ne 0 ]; then
+    LAUNCH_READY=0
+    FAILED_STAGE='GENERATED_SCRIPT_SYNTAX'
+  fi
+fi
+if [ "$LAUNCH_READY" -eq 1 ]; then
+  nohup setsid bash "$SUPERVISOR" >"$SUPERVISOR_LOG" 2>&1 < /dev/null &
+  DETACH_RC=$?
+  if [ "$DETACH_RC" -eq 0 ]; then
+    SUPERVISOR_PID=$!
+    printf 'VEA_P2_LAUNCH=PASS\nSUPERVISOR_PID=%s\nSUPERVISOR_LOG=%s\nWORKER_LOG=%s\nRUN_ROOT=%s\n' \
+      "$SUPERVISOR_PID" "$SUPERVISOR_LOG" "$WORKER_LOG" "$RUN_ROOT"
+  else
+    LAUNCH_READY=0
+    FAILED_STAGE='SUPERVISOR_DETACH'
+  fi
+fi
+if [ "$LAUNCH_READY" -ne 1 ]; then
+  printf 'VEA_P2_LAUNCH=FAILED\nFAILED_STAGE=%s\nSUPERVISOR_PID=NOT_STARTED\nTMUX_PARENT_SHELL=ALIVE\n' "$FAILED_STAGE"
+else
+  printf 'TMUX_PARENT_SHELL=ALIVE\n'
+fi
 ```
 
-Launch only when both syntax codes are zero. The detached child survives SSH
-disconnect and never retries a non-75 result. Exit `130` remains `PARTIAL` for
-manual resume. Monitor the unique persistent log with
+Every clone, reviewed-checkout, local-resource, metadata, plan, generated-file,
+and syntax failure sets `LAUNCH_READY=0`, so it cannot reach `nohup`. The failed
+parent prints `VEA_P2_LAUNCH=FAILED`, its exact `FAILED_STAGE`,
+`SUPERVISOR_PID=NOT_STARTED`, and `TMUX_PARENT_SHELL=ALIVE`. The detached child
+survives SSH disconnect and never retries a non-75 result. Exit `130` remains
+`PARTIAL` for manual resume. Monitor the unique persistent log with
 `tail -f "$SUPERVISOR_LOG"`. The child report ends with exactly:
 
 ```text

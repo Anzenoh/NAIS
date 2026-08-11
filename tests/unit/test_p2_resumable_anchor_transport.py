@@ -4,6 +4,7 @@ import copy
 import importlib.util
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -19,7 +20,7 @@ from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as ra
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "configs/vlm_compat/p2_universal_anchor_transport_v0.json"
 MANIFEST_PATH = ROOT / "data/manifests/p1_1000.jsonl"
-BASELINE = "e9afe5820dd03149811f06f0f0daa374d1c459e2"
+BASELINE = "ad86127c5e7d23c43a3abbec317c10ece4e6c5a7"
 
 
 def config():
@@ -602,6 +603,39 @@ def _parent_shell_without_generated_children(runbook: str) -> str:
     return "\n".join(retained)
 
 
+def _generated_child_body(runbook: str, marker: str) -> str:
+    match = re.search(rf"<<'{re.escape(marker)}'\n(.*?)\n{re.escape(marker)}$", runbook, re.MULTILINE | re.DOTALL)
+    assert match is not None, f"missing {marker} here-document"
+    return match.group(1)
+
+
+def _parent_export_set(runbook: str) -> set[str]:
+    parent = _parent_shell_without_generated_children(runbook)
+    exported: set[str] = set()
+    for statement in re.findall(r"^\s*export\s+([^\n#]+)", parent, re.MULTILINE):
+        exported.update(re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", statement))
+    return exported
+
+
+def _child_local_variables(body: str) -> set[str]:
+    assigned = set(re.findall(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=", body, re.MULTILINE))
+    assigned.update(re.findall(r"^\s*for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\b", body, re.MULTILINE))
+    assigned.update(re.findall(r"\bread\s+-r\s+-a\s+([A-Za-z_][A-Za-z0-9_]*)", body))
+    return assigned
+
+
+def _child_variable_references(body: str) -> set[str]:
+    return {
+        match.group(1) or match.group(2)
+        for match in re.finditer(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?:[^}]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)", body)
+    }
+
+
+def _unresolved_child_variables(body: str, parent_exports: set[str]) -> set[str]:
+    shell_special = {"PIPESTATUS"}
+    return _child_variable_references(body) - _child_local_variables(body) - shell_special - parent_exports
+
+
 def test_runbook_persistent_runtime_and_parent_safety():
     text = (ROOT / "reports/runbooks/VEA-P2-T001D-apple-resumable-anchor-transport.md").read_text(encoding="utf-8")
     assert "/home/chltjsdh/vea/p2_repos" in text
@@ -614,6 +648,45 @@ def test_runbook_persistent_runtime_and_parent_safety():
     parent = _parent_shell_without_generated_children(text)
     for forbidden in ("set -e", "set -u", "set -o pipefail", "\nexit ", "\nexec ", "trap '", "tmux new", "tmux attach"):
         assert forbidden not in parent
+
+
+def test_runbook_generated_child_environment_is_closed_by_parsed_heredocs():
+    text = (ROOT / "reports/runbooks/VEA-P2-T001D-apple-resumable-anchor-transport.md").read_text(encoding="utf-8")
+    exports = _parent_export_set(text)
+    gate = _generated_child_body(text, "VEA_GPU_GATE")
+    supervisor = _generated_child_body(text, "VEA_T001D_SUPERVISOR")
+    required_exports = {
+        "RUN_TOKEN", "GPU_INDEX", "GPU_GATE_SCRIPT", "MAIN_PY", "TASK_REPOSITORY",
+        "RUN_ROOT", "LAUNCH_LOG_ROOT", "WORKER_LOG", "DATASET_ROOT", "CACHE_ROOT",
+        "DINOV3_RUNTIME_ROOT", "DINOV3_SNAPSHOT_ROOT", "DEVICE",
+    }
+    assert required_exports <= exports
+    assert "RUN_TOKEN" in exports
+    assert "GPU_INDEX" in _child_variable_references(gate)
+    assert required_exports - {"GPU_INDEX"} <= _child_variable_references(supervisor)
+    assert _unresolved_child_variables(gate, exports) == set()
+    assert _unresolved_child_variables(supervisor, exports) == set()
+
+
+def test_runbook_prelaunch_failures_are_structurally_gated_from_nohup():
+    text = (ROOT / "reports/runbooks/VEA-P2-T001D-apple-resumable-anchor-transport.md").read_text(encoding="utf-8")
+    parent = _parent_shell_without_generated_children(text)
+    nohup_index = parent.index("nohup setsid bash")
+    assert parent.count("nohup setsid bash") == 1
+    assert re.search(r'if \[ "\$LAUNCH_READY" -eq 1 \]; then\n\s+nohup setsid bash', parent)
+    for stage in (
+        "REVIEWED_CHECKOUT",
+        "MAIN_RUNTIME_METADATA_PREFLIGHT",
+        "LOCAL_RESOURCE_PREFLIGHT",
+        "IMMUTABLE_PLAN",
+        "GENERATED_SCRIPT_SYNTAX",
+    ):
+        failure_index = parent.index(f"FAILED_STAGE='{stage}'")
+        assert failure_index < nohup_index
+        assert "LAUNCH_READY=0" in parent[max(0, failure_index - 96):failure_index]
+        assert "LAUNCH_READY=1" not in parent[failure_index:nohup_index]
+    assert "VEA_P2_LAUNCH=FAILED" in parent
+    assert "SUPERVISOR_PID=NOT_STARTED" in parent
 
 
 def test_runbook_resource_resume_and_pipeline_status_contract():

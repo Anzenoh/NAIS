@@ -13,7 +13,7 @@ from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as ra
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "configs/vlm_compat/p2_universal_anchor_transport_v0.json"
 MANIFEST = ROOT / "data/manifests/p1_1000.jsonl"
-BASELINE = "e9afe5820dd03149811f06f0f0daa374d1c459e2"
+BASELINE = "ad86127c5e7d23c43a3abbec317c10ece4e6c5a7"
 
 
 def _plan(tmp_path: Path, run_root: Path):
