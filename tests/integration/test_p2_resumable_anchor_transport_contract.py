@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import shutil
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as ra
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG = ROOT / "configs/vlm_compat/p2_universal_anchor_transport_v0.json"
 MANIFEST = ROOT / "data/manifests/p1_1000.jsonl"
-BASELINE = "9bec9c62093bc06b13682259883713b96c69b2dc"
+BASELINE = "e9afe5820dd03149811f06f0f0daa374d1c459e2"
 
 
 def _plan(tmp_path: Path, run_root: Path):
@@ -43,6 +44,7 @@ def test_interrupted_resume_equals_uninterrupted_and_skips_completed_generation(
     resumed = tmp_path / "resumed"
     uninterrupted = tmp_path / "uninterrupted"
     plan = _plan(tmp_path, resumed)
+    assert plan["roots"]["reuse_root"] is None
     plan_id = rat.initialize_run(resumed, plan)
     immutable_plan = (resumed / "run_plan.json").read_bytes()
 
@@ -73,6 +75,8 @@ def test_interrupted_resume_equals_uninterrupted_and_skips_completed_generation(
     assert marker.read_bytes() == marker_before and artifact.read_bytes() == artifact_before
     assert marker.stat().st_mtime_ns == marker_mtime and artifact.stat().st_mtime_ns == artifact_mtime
     assert list((resumed / "failures/quarantine").glob("orphan_partial*"))
+    resumed_verify = rat.verify_run(resumed)
+    assert resumed_verify["status"] == "PASS" and resumed_verify["remaining_unit_count"] == 0
     resumed_result = rat.finalize_run(resumed)
     assert resumed_result["status"] == "PASS_RESUMABLE_ANCHOR_TRANSPORT"
     assert resumed_result["encoder_order"] == list(rat.ENCODERS)
@@ -95,3 +99,12 @@ def test_interrupted_resume_equals_uninterrupted_and_skips_completed_generation(
     assert rat.verify_run(uninterrupted, require_final=True)["status"] == "PASS"
     assert not (resumed / "coordinator.lock").exists()
     assert not (uninterrupted / "coordinator.lock").exists()
+    coordinator_spec = importlib.util.spec_from_file_location(
+        "p2_coordinator_integration", ROOT / "scripts/run_resumable_anchor_transport.py"
+    )
+    coordinator = importlib.util.module_from_spec(coordinator_spec)
+    assert coordinator_spec.loader is not None
+    coordinator_spec.loader.exec_module(coordinator)
+    status = coordinator._status(resumed, rat)
+    assert status["plan_id"] == plan_id
+    assert sum(row["completed"] for row in status["stages"]) == 2345

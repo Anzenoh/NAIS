@@ -7,6 +7,7 @@ import os
 import socket
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +19,7 @@ from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as ra
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "configs/vlm_compat/p2_universal_anchor_transport_v0.json"
 MANIFEST_PATH = ROOT / "data/manifests/p1_1000.jsonl"
-BASELINE = "9bec9c62093bc06b13682259883713b96c69b2dc"
+BASELINE = "e9afe5820dd03149811f06f0f0daa374d1c459e2"
 
 
 def config():
@@ -61,6 +62,14 @@ def initialized(tmp_path: Path, stage: str = "05_TRANSPORT_AND_CONNECTOR_VALIDAT
 
 def patch(value: float, count: int = 1):
     return np.full((count, 196, 768), value, dtype=np.float32)
+
+
+def coordinator_module(name="p2_coordinator"):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts/run_resumable_anchor_transport.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_canonical_config_validation():
@@ -128,6 +137,44 @@ def test_storage_estimate_has_exact_margin():
     value = rat.estimate_storage_bytes(1000, 200, 1900)
     assert value["required_with_30_percent_margin_bytes"] == int(np.ceil(value["minimum_bytes"] * 1.30))
     assert value["same_directory_partial_allowance_bytes"] > 0
+
+
+def test_storage_estimate_covers_independently_calculated_persisted_payload():
+    f32 = 4
+    patch_bytes = 196 * 768 * f32
+    global_bytes = 768 * f32
+    connector_bytes = 196 * 1536 * f32
+    image_id_bytes = 96 * 4
+    feature_payload = 1000 * (3 * patch_bytes + 3 * global_bytes + connector_bytes)
+    feature_payload += 1000 * 3 * image_id_bytes
+    anchor_payload = 128 * (4 * patch_bytes + 4 * global_bytes + connector_bytes)
+    anchor_payload += 128 * 4 * image_id_bytes
+    stage05_payload = 200 * 3 * 6 * 2 * (patch_bytes + connector_bytes)
+    stage05_payload += 200 * 3 * 6 * image_id_bytes
+    stage05_payload += 252 * 32768 * 4
+    generation_payload = 1900 * 16 * 1024
+    independently_calculated = feature_payload + anchor_payload + stage05_payload + generation_payload
+    observed = rat.estimate_storage_bytes(1000, 200, 1900)
+    assert observed["durable_payload_bytes"] >= independently_calculated
+    assert observed["required_with_30_percent_margin_bytes"] > observed["previous_underestimated_required_bytes"]
+
+
+def test_storage_old_pass_new_fail_boundary(tmp_path):
+    estimate = rat.estimate_storage_bytes(1000, 200, 1900)
+    available = (
+        estimate["previous_underestimated_required_bytes"]
+        + estimate["required_with_30_percent_margin_bytes"]
+    ) // 2
+    assert available > estimate["previous_underestimated_required_bytes"]
+    with pytest.raises(rat.ContractError, match="insufficient run-root storage"):
+        rat.build_run_plan(
+            config(), manifest(), repository_commit=BASELINE,
+            config_sha256=rat.sha256_file(CONFIG_PATH), manifest_sha256=rat.sha256_file(MANIFEST_PATH),
+            dataset_root=str(tmp_path / "dataset"), cache_root=str(tmp_path / "cache"),
+            repository_root=str(tmp_path / "repo"), dino_runtime_root=str(tmp_path / "dino_runtime"),
+            dino_snapshot_root=str(tmp_path / "dino_snapshot"), run_root=str(tmp_path / "run"),
+            device="fake-cpu", storage_available_bytes=available,
+        )
 
 
 @pytest.mark.parametrize("encoder,tap", [("TARGET_CLIP", "block_11"), ("SIGLIP2", "final_norm"), ("DINOV3", "block_11")])
@@ -285,6 +332,83 @@ def test_resume_binding_rejects_root_change(tmp_path):
         )
 
 
+def test_optional_reuse_root_null_matches_null(tmp_path):
+    value = plan(tmp_path)
+    assert value["roots"]["reuse_root"] is None
+    rat.validate_resume_bindings(
+        value,
+        repository_commit=BASELINE,
+        config_sha256=value["config_sha256"],
+        manifest_sha256=value["manifest_sha256"],
+        roots=dict(value["roots"]),
+        device="cuda:0",
+    )
+
+
+def test_explicit_reuse_root_requires_exact_path(tmp_path):
+    reuse = tmp_path / "reuse"
+    reuse.mkdir()
+    value = rat.build_run_plan(
+        config(), manifest(), repository_commit=BASELINE,
+        config_sha256=rat.sha256_file(CONFIG_PATH), manifest_sha256=rat.sha256_file(MANIFEST_PATH),
+        dataset_root=str(tmp_path / "dataset"), cache_root=str(tmp_path / "cache"),
+        repository_root=str(tmp_path / "repo"), dino_runtime_root=str(tmp_path / "dino_runtime"),
+        dino_snapshot_root=str(tmp_path / "dino_snapshot"), run_root=str(tmp_path / "run"),
+        device="fake-cpu", storage_available_bytes=None, reuse_root=str(reuse),
+    )
+    rat.validate_resume_bindings(
+        value, repository_commit=BASELINE, config_sha256=value["config_sha256"],
+        manifest_sha256=value["manifest_sha256"], roots=dict(value["roots"]), device="fake-cpu",
+    )
+    for observed in (None, str(tmp_path / "different")):
+        roots = dict(value["roots"])
+        roots["reuse_root"] = observed
+        with pytest.raises(rat.PlanMismatchError):
+            rat.validate_resume_bindings(
+                value, repository_commit=BASELINE, config_sha256=value["config_sha256"],
+                manifest_sha256=value["manifest_sha256"], roots=roots, device="fake-cpu",
+            )
+
+
+def test_all_existing_plan_commands_validate_without_reuse_root(tmp_path, monkeypatch):
+    value = plan(tmp_path)
+    root = tmp_path / "run"
+    rat.initialize_run(root, value)
+    coordinator = coordinator_module("p2_coordinator_no_reuse")
+    monkeypatch.setattr(
+        coordinator,
+        "_bindings",
+        lambda args, core: (
+            config(), manifest(), BASELINE, value["config_sha256"], value["manifest_sha256"]
+        ),
+    )
+    monkeypatch.setattr(coordinator, "_validated_runtime_bindings", lambda device: None)
+    roots = value["roots"]
+    for command in ("run", "resume", "verify", "status", "finalize"):
+        args = SimpleNamespace(
+            command=command,
+            config=CONFIG_PATH,
+            manifest=MANIFEST_PATH,
+            dataset_root=Path(roots["dataset_root"]),
+            cache_root=Path(roots["cache_root"]),
+            repository_root=Path(roots["repository_root"]),
+            dinov3_runtime_root=Path(roots["dino_runtime_root"]),
+            dinov3_snapshot_root=Path(roots["dino_snapshot_root"]),
+            run_root=root,
+            device="cuda:0",
+            reuse_root=None,
+        )
+        assert coordinator._validate_existing(args, rat)[1] == rat.sha256_file(root / "run_plan.json")
+
+
+def test_stage04_units_bind_exact_ordered_anchors(tmp_path):
+    value = plan(tmp_path)
+    units = [unit for unit in value["expected_units"] if unit["stage"] == "04_ANCHOR_REGISTRY"]
+    assert len(units) == 4
+    assert all(unit["image_ids"] == value["anchor_image_ids"] for unit in units)
+    assert value["expected_unit_count"] == 2345
+
+
 def test_exclusive_live_lock(tmp_path):
     root, value, plan_id, unit = initialized(tmp_path)
     first = rat.CoordinatorLock(root, plan_id, identity_provider=lambda pid: "start", liveness_provider=lambda h, p, s: True)
@@ -361,8 +485,8 @@ def test_expected_unit_and_generation_counts(tmp_path):
     assert value["expected_generation_count"] == 100 * (1 + 3 * 6)
 
 
-def test_fake_persistent_stage_loads_once(tmp_path):
-    root, value, plan_id, unit = initialized(tmp_path, "01_DINOV3_FEATURE_BANK")
+def test_fake_main_stage_loads_once(tmp_path):
+    root, value, plan_id, unit = initialized(tmp_path, "02_SIGLIP2_FEATURE_BANK")
     spec = importlib.util.spec_from_file_location("p2_worker", ROOT / "scripts/p2_anchor_transport_stage_worker.py")
     worker = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -372,11 +496,135 @@ def test_fake_persistent_stage_loads_once(tmp_path):
         def close(self):
             loaded.append("closed")
     result = worker.execute_stage(
-        rat, value, plan_id, root, "01_DINOV3_FEATURE_BANK",
+        rat, value, plan_id, root, "02_SIGLIP2_FEATURE_BANK",
         fake_loader=lambda stage: (loaded.append(stage) or Model()),
         fake_processor=lambda model, unit: rat.deterministic_fake_payload(plan_id, unit),
     )
-    assert result["model_load_count"] == 1 and loaded == ["01_DINOV3_FEATURE_BANK", "closed"]
+    assert result["model_load_count"] == 1
+    assert result["stage_worker_invocation_count"] == 1
+    assert loaded == ["02_SIGLIP2_FEATURE_BANK", "closed"]
+
+
+def test_fake_dino_63_chunks_count_63_model_loads(tmp_path):
+    value = plan(tmp_path)
+    value["expected_units"] = [
+        unit for unit in value["expected_units"] if unit["stage"] == "01_DINOV3_FEATURE_BANK"
+    ]
+    value["expected_unit_count"] = len(value["expected_units"])
+    root = tmp_path / "run"
+    plan_id = rat.initialize_run(root, value)
+    worker_spec = importlib.util.spec_from_file_location(
+        "p2_worker_dino_63", ROOT / "scripts/p2_anchor_transport_stage_worker.py"
+    )
+    worker = importlib.util.module_from_spec(worker_spec)
+    assert worker_spec.loader is not None
+    worker_spec.loader.exec_module(worker)
+    result = worker.execute_stage(
+        rat, value, plan_id, root, "01_DINOV3_FEATURE_BANK",
+        fake_loader=lambda stage: object(),
+        fake_processor=lambda model, unit: rat.deterministic_fake_payload(plan_id, unit),
+    )
+    assert result["completed_new"] == 63
+    assert result["model_load_count"] == 63
+    assert result["stage_worker_invocation_count"] == 1
+    assert result["extractor_worker_invocation_count"] == 63
+
+
+def test_stage_subprocess_environment_isolation_is_injected():
+    coordinator = coordinator_module("p2_coordinator_environment")
+    binding = {
+        "main_python": coordinator.MAIN_PY,
+        "main_runtime_root": coordinator.MAIN_RUNTIME_ROOT,
+        "main_overlay": coordinator.MAIN_OVERLAY,
+        "cache_bindings": dict(coordinator.APPROVED_CACHE_BINDINGS),
+        "offline_environment": dict(coordinator.REQUIRED_OFFLINE_ENVIRONMENT),
+        "package_versions": {name: "test" for name in coordinator.METADATA_PACKAGES},
+    }
+    value = {"runtime_bindings": binding}
+    base = {
+        "PYTHONPATH": os.pathsep.join((coordinator.MAIN_OVERLAY, "/approved/other")),
+        **coordinator.APPROVED_CACHE_BINDINGS,
+        **coordinator.REQUIRED_OFFLINE_ENVIRONMENT,
+    }
+    captured = []
+    def runner(command, *, check, env):
+        captured.append(env)
+        return SimpleNamespace(returncode=0)
+    coordinator._launch_stage_worker(
+        ["dino-python", "worker"], value, "01_DINOV3_FEATURE_BANK",
+        runner=runner, base_environment=base,
+    )
+    coordinator._launch_stage_worker(
+        ["main-python", "worker"], value, "02_SIGLIP2_FEATURE_BANK",
+        runner=runner, base_environment=base,
+    )
+    assert coordinator.MAIN_OVERLAY not in captured[0].get("PYTHONPATH", "")
+    assert coordinator.MAIN_OVERLAY in captured[1]["PYTHONPATH"].split(os.pathsep)
+    assert captured[0]["HF_HUB_OFFLINE"] == captured[1]["HF_HUB_OFFLINE"] == "1"
+
+
+def test_approved_runtime_binding_uses_metadata_only():
+    coordinator = coordinator_module("p2_coordinator_runtime")
+    environment = {
+        "PYTHONPATH": coordinator.MAIN_OVERLAY,
+        **coordinator.APPROVED_CACHE_BINDINGS,
+        **coordinator.REQUIRED_OFFLINE_ENVIRONMENT,
+    }
+    result = coordinator._validated_runtime_bindings(
+        "cuda:0",
+        executable=coordinator.MAIN_PY,
+        environment=environment,
+        is_file=lambda path: True,
+        is_directory=lambda path: True,
+        metadata_version=lambda package: f"metadata-{package}",
+    )
+    assert result["main_python"] == coordinator.MAIN_PY
+    assert result["main_overlay"] == coordinator.MAIN_OVERLAY
+
+
+def _parent_shell_without_generated_children(runbook: str) -> str:
+    retained = []
+    terminator = None
+    for line in runbook.splitlines():
+        if terminator is not None:
+            if line == terminator:
+                terminator = None
+            continue
+        if "<<'VEA_GPU_GATE'" in line:
+            terminator = "VEA_GPU_GATE"
+            retained.append(line)
+            continue
+        if "<<'VEA_T001D_SUPERVISOR'" in line:
+            terminator = "VEA_T001D_SUPERVISOR"
+            retained.append(line)
+            continue
+        retained.append(line)
+    return "\n".join(retained)
+
+
+def test_runbook_persistent_runtime_and_parent_safety():
+    text = (ROOT / "reports/runbooks/VEA-P2-T001D-apple-resumable-anchor-transport.md").read_text(encoding="utf-8")
+    assert "/home/chltjsdh/vea/p2_repos" in text
+    assert "/home/chltjsdh/vea/p2_runs" in text
+    assert "/tmp" not in text
+    assert "MAIN_PY='/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3'" in text
+    assert '"$MAIN_PY" "$TASK_REPOSITORY/scripts/run_resumable_anchor_transport.py"' in text
+    assert "bash -n \"$GPU_GATE_SCRIPT\"" in text and "bash -n \"$SUPERVISOR\"" in text
+    assert "nohup setsid bash" in text
+    parent = _parent_shell_without_generated_children(text)
+    for forbidden in ("set -e", "set -u", "set -o pipefail", "\nexit ", "\nexec ", "trap '", "tmux new", "tmux attach"):
+        assert forbidden not in parent
+
+
+def test_runbook_resource_resume_and_pipeline_status_contract():
+    text = (ROOT / "reports/runbooks/VEA-P2-T001D-apple-resumable-anchor-transport.md").read_text(encoding="utf-8")
+    assert 'PIPE_CODES=("${PIPESTATUS[@]}")' in text
+    assert 'WORKER_EXIT_CODE="${PIPE_CODES[0]}"' in text
+    assert 'TEE_EXIT_CODE="${PIPE_CODES[1]}"' in text
+    assert '[ "$WORKER_EXIT_CODE" -eq 75 ] && [ "$RESOURCE_RESUMES" -lt 3 ]' in text
+    assert '[ "$WORKER_EXIT_CODE" -eq 130 ]' in text
+    assert "FINAL_VERIFY_EXIT_CODE" in text
+    assert "EXACT_MANUAL_RESUME=%q %q resume" in text
 
 
 def test_signal_flag_stops_only_after_atomic_unit(tmp_path):

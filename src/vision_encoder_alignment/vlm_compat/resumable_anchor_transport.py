@@ -360,6 +360,15 @@ def _unit(
 
 def build_unit_inventory(rows: Sequence[Mapping[str, Any]], chunk_size: int = 16) -> list[dict[str, Any]]:
     ordered = list(rows)
+    anchor_image_ids = [
+        str(row["image_id"])
+        for row in sorted(
+            (row for row in ordered if row["split"] == "train"),
+            key=lambda row: int(row["selection_index"]),
+        )[:128]
+    ]
+    if len(anchor_image_ids) != 128 or len(set(anchor_image_ids)) != 128:
+        raise ContractError("unit inventory requires exactly 128 distinct ordered train anchors")
     units: list[dict[str, Any]] = []
     stage_specs = (
         ("01_DINOV3_FEATURE_BANK", "DINOV3", "features/dinov3"),
@@ -399,7 +408,7 @@ def build_unit_inventory(rows: Sequence[Mapping[str, Any]], chunk_size: int = 16
                 "04_ANCHOR_REGISTRY",
                 f"anchors/{name.lower()}.npz",
                 encoder=name if name in ENCODERS else None,
-                image_ids=[],
+                image_ids=anchor_image_ids,
                 shape=(
                     {"patches": [128, 196, 768], "globals": [128, 768], "connectors": [128, 196, 1536]}
                     if name == "TARGET_DICTIONARY"
@@ -478,28 +487,105 @@ def build_unit_inventory(rows: Sequence[Mapping[str, Any]], chunk_size: int = 16
 
 
 def estimate_storage_bytes(row_count: int, eval_count: int, generation_count: int) -> dict[str, int | float]:
+    """Conservatively account for every persisted T001D array and checkpoint."""
+
     f32 = 4
     patch = 196 * 768 * f32
+    global_mean = 768 * f32
     connector = 196 * 1536 * f32
-    feature_banks = row_count * (3 * patch + connector)
-    anchor_registry = 128 * (4 * patch)
-    transported = eval_count * len(ENCODERS) * len(CONDITIONS) * (patch + connector)
+    unicode_image_id = 96 * 4
+    unicode_plan_id = 64 * 4
+    npz_overhead = 4 * 1024
+    feature_unit_count = math.ceil(row_count / 16) * len(ENCODERS)
+    per_split = eval_count // 2
+    if eval_count % 2 or per_split <= 0:
+        raise ContractError("storage accounting requires equal nonempty validation/test counts")
+    transport_unit_count = 2 * math.ceil(per_split / 16) * len(ENCODERS) * len(CONDITIONS)
+    anchor_unit_count = 4
+    unit_count = feature_unit_count + anchor_unit_count + transport_unit_count + generation_count
+
+    feature_tensor_bytes = row_count * (3 * patch + 3 * global_mean + connector)
+    feature_identity_bytes = row_count * len(ENCODERS) * unicode_image_id
+    feature_container_bytes = feature_unit_count * (unicode_plan_id + npz_overhead)
+    feature_banks = feature_tensor_bytes + feature_identity_bytes + feature_container_bytes
+
+    anchor_tensor_bytes = 128 * (4 * patch + 4 * global_mean + connector)
+    anchor_identity_bytes = 128 * anchor_unit_count * unicode_image_id
+    anchor_container_bytes = anchor_unit_count * (unicode_plan_id + npz_overhead)
+    anchor_registry = anchor_tensor_bytes + anchor_identity_bytes + anchor_container_bytes
+
+    stage05_tensor_bytes = (
+        eval_count
+        * len(ENCODERS)
+        * len(CONDITIONS)
+        * 2
+        * (patch + connector)
+    )
+    stage05_identity_bytes = eval_count * len(ENCODERS) * len(CONDITIONS) * unicode_image_id
+    stage05_metric_bytes = transport_unit_count * 32768 * 4
+    stage05_container_bytes = transport_unit_count * (unicode_plan_id + npz_overhead)
+    transported = (
+        stage05_tensor_bytes
+        + stage05_identity_bytes
+        + stage05_metric_bytes
+        + stage05_container_bytes
+    )
+
     generation_allowance = generation_count * 16 * 1024
-    metadata_allowance = 256 * 1024 * 1024
-    durable_payload = feature_banks + anchor_registry + transported + generation_allowance + metadata_allowance
-    partial_allowance = max(patch + connector, 16 * (patch + connector))
+    marker_allowance = unit_count * 16 * 1024
+    progress_allowance = (2 * unit_count + 64) * 8 * 1024
+    failure_final_allowance = 256 * 1024 * 1024
+    metadata_allowance = marker_allowance + progress_allowance + failure_final_allowance
+    durable_payload = (
+        feature_banks
+        + anchor_registry
+        + transported
+        + generation_allowance
+        + metadata_allowance
+    )
+
+    largest_feature_partial = 16 * (patch + global_mean + connector) + 16 * unicode_image_id + unicode_plan_id + npz_overhead
+    largest_anchor_partial = 128 * (patch + global_mean + connector) + 128 * unicode_image_id + unicode_plan_id + npz_overhead
+    largest_stage05_partial = 16 * 2 * (patch + connector) + 16 * unicode_image_id + 32768 * 4 + unicode_plan_id + npz_overhead
+    partial_allowance = max(
+        largest_feature_partial,
+        largest_anchor_partial,
+        largest_stage05_partial,
+        16 * 1024,
+    )
     minimum = durable_payload + partial_allowance
     required = math.ceil(minimum * 1.30)
+
+    legacy_feature = row_count * (3 * patch + connector)
+    legacy_anchor = 128 * (4 * patch)
+    legacy_transport = eval_count * len(ENCODERS) * len(CONDITIONS) * (patch + connector)
+    legacy_durable = legacy_feature + legacy_anchor + legacy_transport + generation_allowance + 256 * 1024 * 1024
+    legacy_partial = 16 * (patch + connector)
+    legacy_minimum = legacy_durable + legacy_partial
+    legacy_required = math.ceil(legacy_minimum * 1.30)
     return {
         "feature_banks_bytes": feature_banks,
+        "feature_tensor_bytes": feature_tensor_bytes,
+        "feature_identity_and_container_bytes": feature_identity_bytes + feature_container_bytes,
         "anchor_registry_bytes": anchor_registry,
+        "anchor_tensor_bytes": anchor_tensor_bytes,
+        "anchor_identity_and_container_bytes": anchor_identity_bytes + anchor_container_bytes,
         "transport_and_connector_bytes": transported,
+        "stage05_tensor_bytes": stage05_tensor_bytes,
+        "stage05_identity_metric_container_bytes": stage05_identity_bytes + stage05_metric_bytes + stage05_container_bytes,
         "generation_allowance_bytes": generation_allowance,
+        "marker_allowance_bytes": marker_allowance,
+        "progress_allowance_bytes": progress_allowance,
+        "failure_and_final_allowance_bytes": failure_final_allowance,
         "metadata_allowance_bytes": metadata_allowance,
         "same_directory_partial_allowance_bytes": partial_allowance,
+        "durable_payload_bytes": durable_payload,
         "minimum_bytes": minimum,
         "required_with_30_percent_margin_bytes": required,
         "required_with_30_percent_margin_gib": round(required / (1024**3), 6),
+        "previous_underestimated_minimum_bytes": legacy_minimum,
+        "previous_underestimated_required_bytes": legacy_required,
+        "previous_underestimated_required_gib": round(legacy_required / (1024**3), 6),
     }
 
 
@@ -519,6 +605,7 @@ def build_run_plan(
     device: str,
     storage_available_bytes: int | None,
     reuse_root: str | None = None,
+    runtime_bindings: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if len(repository_commit) != 40:
         raise ContractError("repository commit must be an exact 40-character identity")
@@ -576,6 +663,7 @@ def build_run_plan(
             "encoders": config["encoders"],
             "target_vlm": config["target_vlm"],
         },
+        "runtime_bindings": dict(runtime_bindings) if runtime_bindings is not None else None,
         "frozen_hyperparameters": {
             "top_k": config["top_k"],
             "softmax_temperature": config["softmax_temperature"],
@@ -666,8 +754,9 @@ def validate_resume_bindings(
     repository_commit: str,
     config_sha256: str,
     manifest_sha256: str,
-    roots: Mapping[str, str],
+    roots: Mapping[str, str | None],
     device: str,
+    runtime_bindings: Mapping[str, Any] | None = None,
 ) -> None:
     expected = {
         "repository_commit": plan["repository_commit"],
@@ -683,11 +772,22 @@ def validate_resume_bindings(
     }
     if expected != observed:
         raise PlanMismatchError(f"resume identity mismatch: expected={expected} observed={observed}")
-    for name, value in roots.items():
-        planned = plan["roots"].get(name)
+    planned_roots = plan["roots"]
+    if set(planned_roots) != set(roots):
+        raise PlanMismatchError(
+            f"resume root keys mismatch: expected={sorted(planned_roots)} observed={sorted(roots)}"
+        )
+    for name, planned in planned_roots.items():
+        value = roots[name]
+        if planned is None or value is None:
+            if planned is value:
+                continue
+            raise PlanMismatchError(f"resume root mismatch for {name}: expected={planned} observed={value}")
         resolved = str(Path(value).resolve())
         if planned != resolved:
             raise PlanMismatchError(f"resume root mismatch for {name}: expected={planned} observed={resolved}")
+    if plan.get("runtime_bindings") != (dict(runtime_bindings) if runtime_bindings is not None else None):
+        raise PlanMismatchError("resume runtime/overlay binding differs from immutable plan")
 
 
 def marker_path(run_root: Path, unit_id: str) -> Path:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import os
 import shutil
@@ -12,6 +13,25 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Sequence
+
+
+MAIN_PY = "/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3"
+MAIN_RUNTIME_ROOT = "/home/chltjsdh/vea/runtime/p1_apple/main"
+MAIN_OVERLAY = "/home/chltjsdh/vea/runtime/p2_tinyllava_overlay/site-packages"
+APPROVED_CACHE_BINDINGS = {
+    "TRANSFORMERS_CACHE": "/home/chltjsdh/vea/runtime/p2_transformers_cache",
+    "HF_MODULES_CACHE": "/home/chltjsdh/vea/runtime/p2_hf_modules",
+    "HF_HOME": "/home/chltjsdh/vea/checkpoints/huggingface",
+    "HF_HUB_CACHE": "/home/chltjsdh/vea/checkpoints/huggingface/hub",
+}
+REQUIRED_OFFLINE_ENVIRONMENT = {
+    "HF_HUB_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+    "HF_DATASETS_OFFLINE": "1",
+    "HF_HUB_DISABLE_TELEMETRY": "1",
+    "DO_NOT_TRACK": "1",
+}
+METADATA_PACKAGES = ("torch", "transformers", "safetensors", "Pillow")
 
 
 def _repository_src(repository_root: Path) -> Path:
@@ -88,7 +108,7 @@ def _bindings(args: argparse.Namespace, core) -> tuple[dict, list[dict], str, st
     return config, rows, _repository_commit(repository), config_sha, manifest_sha
 
 
-def _root_bindings(args: argparse.Namespace) -> dict[str, str]:
+def _root_bindings(args: argparse.Namespace) -> dict[str, str | None]:
     return {
         "dataset_root": str(args.dataset_root.resolve()),
         "cache_root": str(args.cache_root.resolve()),
@@ -100,9 +120,113 @@ def _root_bindings(args: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def _absolute_without_symlink_resolution(value: str | os.PathLike[str]) -> str:
+    return os.path.normpath(os.path.abspath(os.fspath(value)))
+
+
+def _validated_runtime_bindings(
+    device: str,
+    *,
+    executable: str | None = None,
+    environment: dict[str, str] | None = None,
+    is_file=os.path.isfile,
+    is_directory=os.path.isdir,
+    metadata_version=importlib.metadata.version,
+) -> dict[str, object] | None:
+    """Bind the approved main lane using file and package metadata only."""
+
+    if not device.startswith("cuda"):
+        return None
+    observed_executable = _absolute_without_symlink_resolution(executable or sys.executable)
+    if observed_executable != _absolute_without_symlink_resolution(MAIN_PY) or not is_file(MAIN_PY):
+        raise ValueError(f"coordinator requires approved MAIN_PY: {MAIN_PY}")
+    values = dict(os.environ if environment is None else environment)
+    for label, path in {"MAIN_OVERLAY": MAIN_OVERLAY, **APPROVED_CACHE_BINDINGS}.items():
+        if not is_directory(path):
+            raise ValueError(f"approved runtime path is unavailable: {label}={path}")
+    path_entries = [
+        _absolute_without_symlink_resolution(entry)
+        for entry in values.get("PYTHONPATH", "").split(os.pathsep)
+        if entry
+    ]
+    if _absolute_without_symlink_resolution(MAIN_OVERLAY) not in path_entries:
+        raise ValueError("PYTHONPATH does not contain the approved TinyLLaVA overlay")
+    for name, expected in {**APPROVED_CACHE_BINDINGS, **REQUIRED_OFFLINE_ENVIRONMENT}.items():
+        if values.get(name) != expected:
+            raise ValueError(f"runtime environment mismatch: {name}")
+    versions: dict[str, str] = {}
+    for package in METADATA_PACKAGES:
+        try:
+            versions[package] = metadata_version(package)
+        except importlib.metadata.PackageNotFoundError as error:
+            raise ValueError(f"approved runtime package metadata unavailable: {package}") from error
+    return {
+        "main_python": MAIN_PY,
+        "main_runtime_root": MAIN_RUNTIME_ROOT,
+        "main_overlay": MAIN_OVERLAY,
+        "cache_bindings": dict(APPROVED_CACHE_BINDINGS),
+        "offline_environment": dict(REQUIRED_OFFLINE_ENVIRONMENT),
+        "package_versions": versions,
+    }
+
+
+def _worker_environment(
+    plan: dict,
+    stage: str,
+    *,
+    base_environment: dict[str, str] | None = None,
+) -> dict[str, str]:
+    environment = dict(os.environ if base_environment is None else base_environment)
+    bindings = plan.get("runtime_bindings")
+    if not isinstance(bindings, dict):
+        return environment
+    overlay = _absolute_without_symlink_resolution(str(bindings["main_overlay"]))
+    main_root = _absolute_without_symlink_resolution(str(bindings["main_runtime_root"]))
+    entries = [entry for entry in environment.get("PYTHONPATH", "").split(os.pathsep) if entry]
+    if stage == "01_DINOV3_FEATURE_BANK":
+        entries = [
+            entry
+            for entry in entries
+            if _absolute_without_symlink_resolution(entry) != overlay
+            and not _absolute_without_symlink_resolution(entry).startswith(main_root + os.sep)
+        ]
+        environment.pop("PYTHONHOME", None)
+        environment.pop("VIRTUAL_ENV", None)
+        environment["PYTHONNOUSERSITE"] = "1"
+    else:
+        entries = [entry for entry in entries if _absolute_without_symlink_resolution(entry) != overlay]
+        entries.insert(0, str(bindings["main_overlay"]))
+    if entries:
+        environment["PYTHONPATH"] = os.pathsep.join(entries)
+    else:
+        environment.pop("PYTHONPATH", None)
+    for name, value in {
+        **bindings["cache_bindings"],
+        **bindings["offline_environment"],
+    }.items():
+        environment[str(name)] = str(value)
+    return environment
+
+
+def _launch_stage_worker(
+    command: list[str],
+    plan: dict,
+    stage: str,
+    *,
+    runner=subprocess.run,
+    base_environment: dict[str, str] | None = None,
+):
+    return runner(
+        command,
+        check=False,
+        env=_worker_environment(plan, stage, base_environment=base_environment),
+    )
+
+
 def _validate_existing(args: argparse.Namespace, core):
     config, rows, commit, config_sha, manifest_sha = _bindings(args, core)
     plan, plan_id = core.load_bound_plan(args.run_root.resolve())
+    runtime_bindings = _validated_runtime_bindings(plan["device"])
     core.validate_resume_bindings(
         plan,
         repository_commit=commit,
@@ -110,6 +234,7 @@ def _validate_existing(args: argparse.Namespace, core):
         manifest_sha256=manifest_sha,
         roots=_root_bindings(args),
         device=args.device,
+        runtime_bindings=runtime_bindings,
     )
     if plan["identity_bindings"]["encoders"] != config["encoders"]:
         raise core.PlanMismatchError("current encoder/profile identity differs from immutable plan")
@@ -141,6 +266,7 @@ def _plan(args: argparse.Namespace, core) -> dict:
     parent = args.run_root.resolve().parent
     parent.mkdir(parents=True, exist_ok=True)
     available = shutil.disk_usage(parent).free
+    runtime_bindings = _validated_runtime_bindings(args.device)
     plan = core.build_run_plan(
         config,
         rows,
@@ -156,6 +282,7 @@ def _plan(args: argparse.Namespace, core) -> dict:
         device=args.device,
         storage_available_bytes=available,
         reuse_root=str(args.reuse_root) if args.reuse_root else None,
+        runtime_bindings=runtime_bindings,
     )
     plan_id = core.initialize_run(args.run_root.resolve(), plan)
     return {
@@ -226,7 +353,7 @@ def _execute(args: argparse.Namespace, core, *, resume: bool) -> dict:
                     "--run-root",
                     str(args.run_root.resolve()),
                 ]
-                process = subprocess.run(command, check=False)
+                process = _launch_stage_worker(command, plan, stage)
                 if process.returncode == core.RETRYABLE_EXIT_CODE:
                     raise core.IncompleteRunError(f"stage worker reported retryable resource failure: {stage}")
                 if process.returncode == 130:

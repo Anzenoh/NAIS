@@ -78,6 +78,16 @@ def _bootstrap(args: argparse.Namespace):
     plan, plan_id = core.load_bound_plan(run_root)
     if plan != document or args.stage not in core.STAGES[1:7]:
         raise core.PlanMismatchError("stage or plan identity is outside the immutable DAG")
+    runtime_bindings = plan.get("runtime_bindings")
+    if isinstance(runtime_bindings, dict):
+        overlay = os.path.normpath(os.path.abspath(str(runtime_bindings["main_overlay"])))
+        main_root = os.path.normpath(os.path.abspath(str(runtime_bindings["main_runtime_root"])))
+        observed_paths = [os.path.normpath(os.path.abspath(entry)) for entry in sys.path if entry]
+        if args.stage == "01_DINOV3_FEATURE_BANK":
+            if any(path == overlay or path.startswith(main_root + os.sep) for path in observed_paths):
+                raise core.ContractError("DINO stage inherited main-lane site packages")
+        elif overlay not in observed_paths:
+            raise core.ContractError("main-lane stage is missing the approved TinyLLaVA overlay")
     lock_path = run_root / "coordinator.lock"
     if not lock_path.is_file():
         raise core.AmbiguousLockError("stage worker requires the live coordinator lock")
@@ -180,7 +190,7 @@ def _feature_stage(core, plan, plan_id, run_root, stage: str) -> tuple[int, int]
         return 0, 0
     repository = Path(plan["roots"]["repository_root"])
     cache = Path(plan["roots"]["cache_root"])
-    model_loads = 1
+    model_loads = 0 if stage == "01_DINOV3_FEATURE_BANK" else 1
     worker_invocations = 0
     if stage == "01_DINOV3_FEATURE_BANK":
         from vision_encoder_alignment.vlm_compat import dinov3_raw_injection as raw
@@ -205,6 +215,7 @@ def _feature_stage(core, plan, plan_id, run_root, stage: str) -> tuple[int, int]
                 batch = _canonical_batch(plan, unit, rows, core)
                 result = extractor.extract(batch, tap_names=(tap,))
                 worker_invocations += 1
+                model_loads += 1
                 patches = np.array(result.get_tap(tap).patch, dtype=np.float32, copy=True, order="C")
                 patches = core.validate_patch_batch(patches, name="DINOV3 patches", batch_size=len(unit["image_ids"]))
                 globals_ = np.ascontiguousarray(patches.mean(axis=1, dtype=np.float32))
@@ -578,24 +589,56 @@ def execute_stage(
 
     pending = [unit for unit in _units(plan, stage) if not core.validate_unit_completion(run_root, unit, plan_id)]
     if not pending:
-        return {"stage": stage, "completed_new": 0, "model_load_count": 0, "worker_invocation_count": 0}
+        return {
+            "stage": stage,
+            "completed_new": 0,
+            "model_load_count": 0,
+            "stage_worker_invocation_count": 1,
+            "extractor_worker_invocation_count": 0,
+        }
     core.append_event(run_root, core.progress_event(plan_id, "STAGE_STARTED", stage=stage))
     completed = 0
     if fake_loader is not None or fake_processor is not None:
         if fake_loader is None or fake_processor is None:
             raise ValueError("fake loader and processor must be supplied together")
-        model = fake_loader(stage)
-        try:
+        if stage == "01_DINOV3_FEATURE_BANK":
             for unit in pending:
-                _unit_started(core, run_root, plan_id, unit)
-                core.atomic_publish_unit(run_root, unit, fake_processor(model, unit), plan_id, elapsed_seconds=0.0)
-                completed += 1
-                _stop_after_unit(core, run_root, plan_id, stage)
-        finally:
-            close = getattr(model, "close", None)
-            if callable(close):
-                close()
-        loads, workers = 1, 1
+                model = fake_loader(stage)
+                try:
+                    _unit_started(core, run_root, plan_id, unit)
+                    core.atomic_publish_unit(
+                        run_root,
+                        unit,
+                        fake_processor(model, unit),
+                        plan_id,
+                        elapsed_seconds=0.0,
+                    )
+                    completed += 1
+                    _stop_after_unit(core, run_root, plan_id, stage)
+                finally:
+                    close = getattr(model, "close", None)
+                    if callable(close):
+                        close()
+            loads, workers = completed, completed
+        else:
+            model = fake_loader(stage)
+            try:
+                for unit in pending:
+                    _unit_started(core, run_root, plan_id, unit)
+                    core.atomic_publish_unit(
+                        run_root,
+                        unit,
+                        fake_processor(model, unit),
+                        plan_id,
+                        elapsed_seconds=0.0,
+                    )
+                    completed += 1
+                    _stop_after_unit(core, run_root, plan_id, stage)
+            finally:
+                close = getattr(model, "close", None)
+                if callable(close):
+                    close()
+            loads, workers = 1, 1
     elif stage in {"01_DINOV3_FEATURE_BANK", "02_SIGLIP2_FEATURE_BANK"}:
         loads, workers = _feature_stage(core, plan, plan_id, run_root, stage)
         completed = len(pending)
@@ -627,7 +670,8 @@ def execute_stage(
         "stage": stage,
         "completed_new": completed,
         "model_load_count": loads,
-        "worker_invocation_count": workers,
+        "stage_worker_invocation_count": 1,
+        "extractor_worker_invocation_count": workers,
     }
 
 
