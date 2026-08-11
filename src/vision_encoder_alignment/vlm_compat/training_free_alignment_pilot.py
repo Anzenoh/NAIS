@@ -306,6 +306,47 @@ def writable_contiguous_float32(value: object) -> Any:
     return np.array(value, dtype=np.float32, order="C", copy=True)
 
 
+def held_out_patch_batch(dinov3_features: object, test_index: int) -> Any:
+    """Select one held-out image while preserving its singleton batch axis."""
+
+    import numpy as np
+
+    source = np.asarray(dinov3_features)
+    if source.shape != (12, *PATCH_SHAPE):
+        raise AlignmentPilotError("DINO held-out source must have shape (12, 196, 768)")
+    if type(test_index) is not int or test_index not in range(4):
+        raise AlignmentPilotError("held-out test index must be an integer from zero through three")
+    start = 8 + test_index
+    result = source[start : start + 1]
+    if result.shape != (1, *PATCH_SHAPE):
+        raise AlignmentPilotError("held-out DINO batch axis was not preserved")
+    return result
+
+
+def validate_replacement_injection_array(value: object, *, condition: str) -> Any:
+    """Fail fast on any replacement array outside the exact raw-injection ABI."""
+
+    import numpy as np
+
+    if condition not in CONDITIONS[1:]:
+        raise AlignmentPilotError("replacement condition must be RAW, CALIBRATED, or LINEAR")
+    if not isinstance(value, np.ndarray):
+        raise AlignmentPilotError(f"{condition} replacement must be a NumPy array")
+    if value.shape != (1, *PATCH_SHAPE):
+        raise AlignmentPilotError(
+            f"{condition} replacement shape is {value.shape}, not (1, 196, 768)"
+        )
+    if value.dtype != np.dtype(np.float32):
+        raise AlignmentPilotError(f"{condition} replacement dtype must be float32")
+    if not value.flags.c_contiguous:
+        raise AlignmentPilotError(f"{condition} replacement must be C contiguous")
+    if not value.flags.writeable:
+        raise AlignmentPilotError(f"{condition} replacement must be writable")
+    if not np.isfinite(value).all():
+        raise AlignmentPilotError(f"{condition} replacement contains NaN or Inf")
+    return value
+
+
 def flattened_metrics(condition: object, native_value: object, train_target_mean: object) -> dict[str, float]:
     """Compute task-defined flattened float64 cosine, norm ratio, and NMSE."""
 
@@ -776,6 +817,32 @@ def run_training_free_alignment_pilot(
             states: dict[str, tuple[native.CaptureState, list[list[int]], str]] = {
                 "NATIVE": (native_state, native_tokens, native_text)
             }
+            with execution_context(
+                "held_out_generation",
+                image_id=row.image_id,
+                relative_path=row.relative_path,
+                condition="RAW",
+            ):
+                raw_batch = held_out_patch_batch(dino, test_index)
+            with execution_context(
+                "held_out_generation",
+                image_id=row.image_id,
+                relative_path=row.relative_path,
+                condition="CALIBRATED",
+            ):
+                calibrated_batch = apply_moment_calibration(raw_batch, moment)
+            with execution_context(
+                "held_out_generation",
+                image_id=row.image_id,
+                relative_path=row.relative_path,
+                condition="LINEAR",
+            ):
+                linear_batch = apply_orthogonal_procrustes(calibrated_batch, linear)
+            replacement_batches = {
+                "RAW": raw_batch,
+                "CALIBRATED": calibrated_batch,
+                "LINEAR": linear_batch,
+            }
             for condition in CONDITIONS[1:]:
                 with execution_context(
                     "held_out_generation",
@@ -783,15 +850,8 @@ def run_training_free_alignment_pilot(
                     relative_path=row.relative_path,
                     condition=condition,
                 ):
-                    if condition == "RAW":
-                        transformed = dino[8 + test_index]
-                    elif condition == "CALIBRATED":
-                        transformed = apply_moment_calibration(dino[8 + test_index], moment)
-                    else:
-                        transformed = apply_orthogonal_procrustes(
-                            apply_moment_calibration(dino[8 + test_index], moment), linear
-                        )
-                    array = writable_contiguous_float32(transformed)
+                    array = writable_contiguous_float32(replacement_batches[condition])
+                    array = validate_replacement_injection_array(array, condition=condition)
                     tensor = torch.from_numpy(array)
                     injection = native.ReplayInjection(
                         model, tensor, connector, prepare_patch=native._prepare_for_connector

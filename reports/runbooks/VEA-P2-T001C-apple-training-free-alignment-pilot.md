@@ -1,19 +1,19 @@
-# VEA-P2-T001C-R1 Apple direct-calibration alignment pilot
+# VEA-P2-T001C-R2 Apple batch-preserving alignment pilot
 
 Run this once from the user's existing tmux parent shell after independent review
-supplies the reviewed R1 commit. The parent commands below apply no `set -e`,
+supplies the reviewed R2 commit. The parent commands below apply no `set -e`,
 `exit`, `exec`, ERR/EXIT trap, or tmux create/attach operation. Preflight and the
 single pilot execution run inside one separate child bash.
 
 ```bash
-TASK_BRANCH='codex/vea-p2-t001c-r1-direct-calibration-capture'
+TASK_BRANCH='codex/vea-p2-t001c-r2-preserve-injection-batch-axis'
 TASK_COMMIT_SHA='<REVIEWED_TASK_COMMIT_SHA>'
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-REPO="/home/chltjsdh/vea/p2_repos/vea-p2-t001c-r1-${STAMP}"
-OUTPUT="/home/chltjsdh/vea/p2_outputs/vea-p2-t001c-r1-${STAMP}"
-WORKER="/home/chltjsdh/vea/p2_outputs/vea-p2-t001c-r1-${STAMP}.worker.sh"
-WORKER_LOG="/home/chltjsdh/vea/p2_outputs/vea-p2-t001c-r1-${STAMP}.worker.log"
-PILOT_LOG="/home/chltjsdh/vea/p2_outputs/vea-p2-t001c-r1-${STAMP}.pilot.log"
+REPO="/home/chltjsdh/vea/p2_repos/vea-p2-t001c-r2-${STAMP}"
+OUTPUT="/home/chltjsdh/vea/p2_outputs/vea-p2-t001c-r2-${STAMP}"
+WORKER="/home/chltjsdh/vea/p2_outputs/vea-p2-t001c-r2-${STAMP}.worker.sh"
+WORKER_LOG="/home/chltjsdh/vea/p2_outputs/vea-p2-t001c-r2-${STAMP}.worker.log"
+PILOT_LOG="/home/chltjsdh/vea/p2_outputs/vea-p2-t001c-r2-${STAMP}.pilot.log"
 MAIN_PY='/home/chltjsdh/vea/runtime/p1_apple/main/bin/python3'
 DINO_RUNTIME_ROOT='/home/chltjsdh/vea/runtime/p1_apple/dinov3_isolated'
 OVERLAY='/home/chltjsdh/vea/runtime/p2_tinyllava_overlay/site-packages'
@@ -29,7 +29,7 @@ export DINO_RUNTIME_ROOT OVERLAY HF_HOME HF_HUB_CACHE SOURCE_SNAPSHOT_ROOT
 export DINO_SNAPSHOT_ROOT DATASET_ROOT
 
 if [ -e "$REPO" ] || [ -e "$OUTPUT" ] || [ -e "$WORKER" ] || [ -e "$WORKER_LOG" ] || [ -e "$PILOT_LOG" ]; then
-  printf 'STOP: one or more fresh R1 paths already exist\n'
+  printf 'STOP: one or more fresh R2 paths already exist\n'
   WORKER_EXIT_CODE=125
   VEA_P2_EXECUTION=FAILED
   printf 'WORKER_EXIT_CODE=%s\nVEA_P2_EXECUTION=%s\nTMUX_PARENT_SHELL=ALIVE\n' "$WORKER_EXIT_CODE" "$VEA_P2_EXECUTION"
@@ -67,12 +67,13 @@ PY
   esac
   printf 'main_interpreter=%s\ndinov3_interpreter=%s\ndinov3_snapshot=%s\n' "$MAIN_PY" "$DINO_PY" "$DINO_SNAPSHOT_ROOT"
 
-  PYTHONPATH="$OVERLAY" "$MAIN_PY" - <<'PY' || { printf 'STOP: TinyLLaVA dependencies unavailable\n'; return 18; }
+  PYTHONPATH="$OVERLAY" "$MAIN_PY" - <<'PY' || { printf 'STOP: TinyLLaVA dependency metadata unavailable\n'; return 18; }
 import importlib.metadata as m
 assert m.version('sentencepiece') == '0.2.0'
 assert m.version('protobuf') == '4.25.3'
-import safetensors, torch, transformers
-print('TinyLLaVA offline dependencies valid')
+for distribution in ('safetensors', 'torch', 'transformers'):
+    print(f'{distribution}={m.version(distribution)}')
+print('TinyLLaVA dependency metadata valid; no runtime module imported')
 PY
 
   PYTHONPATH="$REPO/src" "$MAIN_PY" - "$REPO/data/manifests/p1_1000.jsonl" "$DATASET_ROOT" <<'PY' || { printf 'STOP: selected source validation failed\n'; return 19; }

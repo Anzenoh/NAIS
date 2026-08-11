@@ -274,6 +274,94 @@ def test_numpy_boundary_is_writable_contiguous_copy() -> None:
     assert not np.shares_memory(original, copied)
 
 
+def test_held_out_selection_preserves_batch_axis_and_rejects_legacy_form() -> None:
+    source = np.arange(12 * 196 * 768, dtype=np.float32).reshape(12, 196, 768)
+    legacy = source[8]
+    required = pilot.held_out_patch_batch(source, 0)
+    assert legacy.shape == (196, 768)
+    assert source[8:9].shape == required.shape == (1, 196, 768)
+    np.testing.assert_array_equal(required, source[8:9])
+    generation_calls: list[str] = []
+    with pytest.raises(pilot.AlignmentPilotError, match=r"not \(1, 196, 768\)"):
+        pilot.validate_replacement_injection_array(legacy, condition="RAW")
+        generation_calls.append("chat")
+    assert generation_calls == []
+
+
+def test_all_four_held_out_indices_preserve_singleton_batch_axis() -> None:
+    source = np.broadcast_to(
+        np.arange(12, dtype=np.float32)[:, None, None], (12, 196, 768)
+    ).copy()
+    for test_index in range(4):
+        batch = pilot.held_out_patch_batch(source, test_index)
+        assert batch.shape == (1, 196, 768)
+        assert np.all(batch == 8 + test_index)
+
+
+def test_all_replacement_conditions_remain_exact_batches() -> None:
+    source = np.ones((12, 196, 768), dtype=np.float32)
+    vector_zeros = np.zeros(768, dtype=np.float32)
+    vector_ones = np.ones(768, dtype=np.float32)
+    moment = pilot.MomentFit(
+        vector_ones, vector_zeros, vector_zeros, vector_ones, vector_zeros, vector_ones
+    )
+    linear = pilot.LinearFit(np.eye(768, dtype=np.float32), vector_zeros, vector_zeros)
+    raw_batch = pilot.held_out_patch_batch(source, 0)
+    calibrated_batch = pilot.apply_moment_calibration(raw_batch, moment)
+    linear_batch = pilot.apply_orthogonal_procrustes(calibrated_batch, linear)
+    for condition, value in (
+        ("RAW", raw_batch), ("CALIBRATED", calibrated_batch), ("LINEAR", linear_batch)
+    ):
+        boundary = pilot.writable_contiguous_float32(value)
+        assert pilot.validate_replacement_injection_array(boundary, condition=condition) is boundary
+        assert boundary.shape == (1, 196, 768)
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (np.zeros((1, 196, 768), dtype=np.float64), "dtype"),
+        (np.zeros((1, 196, 1536), dtype=np.float32)[:, :, ::2], "C contiguous"),
+        (np.full((1, 196, 768), np.nan, dtype=np.float32), "NaN or Inf"),
+    ],
+)
+def test_replacement_boundary_rejects_dtype_layout_and_finite_violations(
+    value: np.ndarray, message: str
+) -> None:
+    with pytest.raises(pilot.AlignmentPilotError, match=message):
+        pilot.validate_replacement_injection_array(value, condition="LINEAR")
+
+
+def test_replacement_boundary_rejects_read_only_array() -> None:
+    value = np.zeros((1, 196, 768), dtype=np.float32)
+    value.flags.writeable = False
+    with pytest.raises(pilot.AlignmentPilotError, match="writable"):
+        pilot.validate_replacement_injection_array(value, condition="CALIBRATED")
+
+
+def test_valid_replay_connector_observes_three_dimensions_and_batched_output() -> None:
+    value = pilot.validate_replacement_injection_array(
+        np.zeros((1, 196, 768), dtype=np.float32), condition="RAW"
+    )
+    observed: list[tuple[int, ...]] = []
+
+    class Model:
+        def encode_images(self, _placeholder: object) -> np.ndarray:
+            raise AssertionError("original encode_images must be bypassed")
+
+    def connector(patch: np.ndarray) -> np.ndarray:
+        observed.append(patch.shape)
+        return np.zeros((patch.shape[0], 196, 1536), dtype=np.float32)
+
+    model = Model()
+    injection = pilot.native.ReplayInjection(model, value, connector)
+    with injection:
+        output = model.encode_images(object())
+    assert observed == [(1, 196, 768)]
+    assert output.shape == (1, 196, 1536)
+    assert injection.invocations == 1 and injection.restored
+
+
 def test_direct_calibration_uses_pinned_preprocessing_and_encode_only_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -468,3 +556,15 @@ def test_cli_help_is_import_safe() -> None:
     assert completed.returncode == 0
     assert "--dinov3-snapshot-root" in completed.stdout
     assert "torch" not in completed.stderr.lower()
+
+
+def test_apple_runbook_has_no_torch_or_cuda_initialization_before_gpu_gate() -> None:
+    runbook = Path(
+        "reports/runbooks/VEA-P2-T001C-apple-training-free-alignment-pilot.md"
+    ).read_text(encoding="utf-8")
+    before_gate, separator, _after_gate = runbook.partition("  good=0\n")
+    assert separator
+    assert "import torch" not in before_gate
+    assert "from torch" not in before_gate
+    assert "torch.cuda" not in before_gate
+    assert "codex/vea-p2-t001c-r2-preserve-injection-batch-axis" in before_gate
