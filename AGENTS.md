@@ -2,9 +2,11 @@
 
 ## 1. Repository purpose
 
-This repository implements reproducible, encoder-only experiments for comparing and aligning hidden representations from heterogeneous vision encoders.
-
-The current research phase is **representation extraction and analysis**. An LLM, multimodal projector, instruction tuning, and end-to-end MLLM training are outside the current phase unless a later approved task explicitly changes the research contract.
+This repository implements reproducible experiments for comparing and aligning
+hidden representations from heterogeneous frozen vision encoders. Phase 0 and
+Phase 1 are encoder-only. Phase 2 permits query-conditioned adapter-only fitting
+and evaluation through a frozen TinyLLaVA connector and frozen LLM under the
+approved Phase 2 contracts.
 
 ## 2. Instruction and context loading
 
@@ -23,13 +25,23 @@ The following files are protected and may be edited only when the active task ex
 - `AGENTS.md`
 - `docs/RESEARCH_CONTRACT.md`
 - `docs/METRIC_DEFINITIONS.md`
+- `docs/EXPERIMENT_PROTOCOL_P2_ADAPTER.md`
+- `docs/VLM_COMPATIBILITY_METRICS.md`
 - `docs/contracts/FEATURE_ARTIFACT_SCHEMA.md`
+- `docs/contracts/VLM_ADAPTER_COMPATIBILITY_V1.md`
 - `configs/models.yaml`
 
 ## 3. Non-negotiable research rules
 
 - Keep all vision encoders frozen in Phase 0 and Phase 1.
 - Do not introduce an LLM, multimodal projector, caption decoder, or instruction-tuning path in Phase 0 or Phase 1.
+- In Phase 2, only the adapter may be fitted or trained. Source encoders,
+  target CLIP, the TinyLLaVA connector, and the TinyLLaVA LLM remain frozen.
+- Phase 2 may evaluate adapted features through the frozen target connector and
+  may run frozen-LLM generation. It never permits connector, LLM, target-CLIP,
+  or source-encoder fine-tuning.
+- A direct Phase 2 adapter must use the same Query image's source feature; it
+  must not present another image's target feature as its primary output.
 - Compare equivalent representation stages. Never mix raw backbone hidden states with pooled, projected, merged, or LLM-aligned tokens without an explicitly named experiment.
 - Use one canonical image geometry for cross-encoder spatial comparison, followed by each model's documented numeric normalization.
 - Preserve image pairing and split by image ID. Never split patch rows independently across train and test.
@@ -61,7 +73,17 @@ The following files are protected and may be edited only when the active task ex
 
 ## 6. Git and scope control
 
-- Inspect `git status` before editing.
+- Inspect Git state before editing. In an environment with a documented
+  filesystem/location false-dirty effect, Task cleanliness is established by
+  all of: exact expected `HEAD`, `git diff --quiet` exit 0,
+  `git diff --cached --quiet` exit 0, and no output from
+  `git ls-files --others --exclude-standard`.
+- `git status` and porcelain remain diagnostic information. Nonempty porcelain
+  alone is advisory only when the documented anomaly applies and every
+  authoritative content-level gate passes.
+- A baseline mismatch, semantic diff, staged diff, or untracked path is always
+  blocking. Never ignore a real content-level failure.
+- Do not use `git update-index --refresh` as routine cleanup.
 - Do not overwrite unrelated user changes.
 - Keep one task ID to one bounded change set.
 - Do not rename or reorganize unrelated files.

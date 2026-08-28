@@ -1,0 +1,124 @@
+# Phase 2 Query-Conditioned Adapter Protocol
+
+## 1. Purpose and research question
+
+Phase 2 tests direct encoder-to-VLM compatibility while every pretrained model
+component remains frozen. For the same Query image `x`, the required relation is:
+
+```text
+A_s(E_s(x)) -> E_t(x)
+```
+
+The research question is: what is the minimum transformation complexity needed
+to restore functional compatibility with the frozen target VLM?
+
+## 2. Feature boundaries
+
+Target:
+
+- TinyLLaVA native CLIP pre-connector patch feature;
+- patch-only `[N,196,768]`.
+
+Source candidates:
+
+- SigLIP2 `final_norm`, patch-only `[N,196,768]`;
+- DINOv3 block 11 after removing CLS 1 plus register tokens 4, patch-only
+  `[N,196,768]`.
+
+Raw-source, adapted-target-like, connector-output, and LLM-output tensors are
+distinct feature classes. Identity, tap, shape, image-ID, and ordering checks
+must pass before fitting or evaluation.
+
+## 3. Frozen and fitted components
+
+Frozen in evaluation mode:
+
+- source vision encoder;
+- target TinyLLaVA CLIP;
+- TinyLLaVA connector;
+- TinyLLaVA LLM.
+
+Only the adapter may be fitted or trained. Calibration, Orthogonal Procrustes,
+and Ridge are adapter-family baselines even when fitted in closed form without
+an optimizer.
+
+## 4. Dataset and partition roles
+
+Reuse the immutable `p1_1000` image-level split:
+
+| Partition | Images | Role |
+|---|---:|---|
+| Train | 800 | Fit statistics and adapter weights |
+| Validation | 100 | Select finalized configuration without Test access |
+| Test | 100 | Held-out evaluation of finalized configurations |
+
+The split seed is 43. Partitioning is by image ID before patch flattening;
+patch-level leakage is prohibited. Existing validated feature banks are reused
+by default. New extraction requires a demonstrated identity, tap,
+preprocessing, or artifact incompatibility.
+
+## 5. Complexity ladder
+
+Evaluate increasing complexity only after reviewed evidence:
+
+1. Dimension-wise Calibration
+2. Orthogonal Procrustes
+3. Ridge / Full Linear
+4. Low-rank Linear
+5. Residual Bottleneck MLP
+6. Spatial Residual Adapter only if token-wise methods remain insufficient
+
+## 6. Fitting, selection, and Test separation
+
+- Train supplies every fitted statistic, parameter, and weight.
+- Validation selects hyperparameters and finalized configurations.
+- Test is not used for fitting, threshold choice, early stopping, or model
+  selection.
+- Test evaluation is performed for finalized configurations only and follows
+  the task-approved single-use protocol.
+- Validation-rejected candidates do not require Test generation.
+
+## 7. Frozen downstream evaluation
+
+Every finalized method supports patch cosine, NMSE, and R-squared; connector
+cosine and NMSE; same-image R@1 and R@5; and actual frozen-LLM generation with
+native-path exact match and Token F1. The native CLIP path is the reference.
+All finalized methods use identical prompt and decoding configuration.
+
+`VEA-P2-T001D` anchor transport remains a historical/comparison baseline. It
+does not satisfy the primary direct-adapter definition because it selects or
+combines other-image target features. Its evidence also establishes that tensor
+similarity alone is insufficient for functional compatibility claims.
+
+## 8. Experiment gates
+
+Before fitting:
+
+- feature-bank and frozen-checkpoint identities pass;
+- source/target shapes, image IDs, and ordering match;
+- split isolation passes;
+- only adapter parameters are trainable;
+- applicable synthetic known-mapping controls pass.
+
+Before Test:
+
+- the exact configuration was selected using Train/Validation only;
+- fitted artifact hash and reproducibility metadata are complete;
+- prompt and decoding settings are frozen identically across methods.
+
+Software acceptance and scientific performance are reported separately.
+
+## 9. OPEN configuration fields
+
+The following remain `OPEN` until a separately reviewed configuration Task:
+
+- exact Phase 2 adapter experiment ID;
+- Ridge lambda grid;
+- low-rank rank grid;
+- MLP bottleneck size;
+- optimizer, learning rate, epochs, and early stopping;
+- exact patch loss, connector auxiliary loss, and connector-loss weight;
+- parameter budget and latency budget;
+- DINOv3 versus SigLIP2 execution order;
+- exact generation prompt, temperature, `top_p`, and `max_new_tokens`;
+- semantic generation metric.

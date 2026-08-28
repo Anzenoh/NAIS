@@ -1,18 +1,19 @@
 # Vision Encoder Alignment
 
-A research codebase for analyzing whether heterogeneous vision encoders learn structurally related representations and for determining the minimum transformation complexity required to align them.
+A research codebase for reproducible comparison and functional alignment of frozen vision-encoder representations.
 
 ## Current scope
 
-The initial scope is encoder-only:
+Phase 0 and Phase 1 established the encoder-only representation-analysis
+foundation: shared image geometry, model-specific normalization, validated
+feature banks, image-level splits, and held-out alignment metrics.
 
-- frozen vision encoders;
-- canonical image geometry;
-- layer-wise global and patch feature extraction;
-- CKA, Procrustes, ridge mapping, retrieval, and spatial correspondence;
-- reproducible manifests and artifact validation.
-
-An LLM or multimodal projector is not part of the current implementation phase.
+Current work is Phase 2 query-conditioned encoder-to-VLM adapter compatibility.
+An adapter may be fitted to transform a source feature from the same Query image
+into the TinyLLaVA native CLIP pre-connector feature space. Source encoders,
+target CLIP, the TinyLLaVA connector, and the TinyLLaVA LLM remain frozen.
+Frozen connector and LLM generation evaluation is permitted only under the
+Phase 2 contracts.
 
 ## Start here
 
@@ -23,4 +24,4 @@ An LLM or multimodal projector is not part of the current implementation phase.
 
 ## Repository state
 
-This starter kit intentionally contains research and workflow contracts before implementation. The first task is `tasks/VEA-P0-T001-repository-audit.md`.
+See `docs/PROJECT_STATUS.md` for the accepted state and next reviewed task.

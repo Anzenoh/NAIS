@@ -108,3 +108,27 @@ Review the submitted evidence, not the agent's confidence. If the material is in
 - commit message includes the task ID;
 - generated artifacts remain untracked;
 - protected contract changes are isolated from implementation changes where possible.
+
+## 9. Git cleanliness authority
+
+`VEA-OPS-GIT-001` demonstrated a filesystem/location false-dirty effect in the
+G: worktree. A worktree is Task-clean only when all four content-level checks
+pass:
+
+1. `git rev-parse HEAD` equals the exact expected Task baseline;
+2. `git diff --quiet` exits 0;
+3. `git diff --cached --quiet` exits 0;
+4. `git ls-files --others --exclude-standard` returns no paths.
+
+`git status` and porcelain remain useful diagnostic information. Nonempty
+porcelain alone is not a blocker in an environment where the documented
+filesystem/location effect applies and all four authoritative checks pass.
+No semantic diff, staged diff, untracked path, or baseline mismatch may be
+ignored. `git diff-files --quiet` is not the sole cleanliness authority in this
+environment.
+
+`git update-index --refresh` is a diagnostic operation, not routine cleanup,
+and requires explicit Task authorization. A new clone or repository migration
+is not required solely because of phantom porcelain modifications. The
+controlled evidence implicated filesystem location; it did not prove that
+Google Drive software itself was the causal mechanism.

@@ -80,3 +80,25 @@ Seeds do not replace deterministic validation. Record observed nondeterminism fo
 - use checksums for shards;
 - do not use pickle as the canonical interchange format;
 - incomplete runs must be marked and must not be consumed by default analysis commands.
+
+## 8. Phase 2 adapter record
+
+Every Phase 2 adapter run additionally records:
+
+- source feature-bank identity, artifact hash, encoder/checkpoint, tap, feature
+  class, preprocessing identity, shape, dtype, and ordered image-ID identity;
+- target feature-bank identity and corresponding TinyLLaVA native CLIP
+  checkpoint, pre-connector tap, shape, dtype, and ordered image-ID identity;
+- immutable manifest and split identities, including the `p1_1000` split hash;
+- adapter family and exact architecture;
+- fitted parameter or weight artifact hash;
+- fitting objective or loss and every loss component;
+- optimizer and all hyperparameters when applicable;
+- random seed and deterministic settings;
+- validation-selection candidates, criterion, and selected result;
+- exact generation prompt and decoding configuration;
+- frozen source encoder, target CLIP, connector, and LLM identities plus
+  frozen-state and adapter-only-trainability verification.
+
+Fields not frozen by an approved configuration Task are recorded as `OPEN` and
+must not receive inferred defaults.

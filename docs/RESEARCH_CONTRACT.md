@@ -119,3 +119,45 @@ permitted. Raw patch tokens and connector outputs remain separate feature
 classes. This pilot is separate from, and does not revise, any Phase 0 or Phase
 1 scientific claim; a software replay PASS does not establish encoder
 interchangeability.
+
+## 11. Phase 2 query-conditioned adapter contract
+
+This section is separate from the frozen native-replay pilot above. Phase 0 and
+Phase 1 remain encoder-only historical contracts. Phase 2 permits fitting or
+training only an adapter that implements the same-Query relation:
+
+```text
+Adapter(E_source(x)) -> E_target(x)
+```
+
+Normative requirements:
+
+- the source feature and target feature belong to the same Query image `x`;
+- every source vision encoder is frozen;
+- target TinyLLaVA CLIP is frozen;
+- the TinyLLaVA connector is frozen;
+- the TinyLLaVA LLM is frozen;
+- only adapter parameters may be fitted or trained, and trainable-parameter
+  verification must prove that boundary;
+- source and target feature identities, taps, shapes, image IDs, and ordering
+  are checked before fitting or evaluation;
+- the immutable `p1_1000` split is by image ID: Train 800, Validation 100,
+  Test 100, seed 43, with no patch-level leakage;
+- fitting statistics and weights use Train; model and hyperparameter selection
+  uses Train/Validation only; Test remains held out for finalized evaluation;
+- raw-source, adapted-target-like, connector-output, and LLM-output feature
+  classes remain explicit and are never silently mixed;
+- every finalized method uses identical generation prompt and decoding settings.
+
+Any identity, split, feature-class, or frozen-state mismatch fails closed.
+Closed-form Calibration, Procrustes, and Ridge mappings count as adapter-family
+baselines even when no optimizer or backward pass is used.
+
+## 12. Phase 2 interpretation boundary
+
+`VEA-P2-T001D` anchor transport remains valid historical/comparison evidence,
+but it is not the primary direct adapter because it selects or combines target
+features from other images. Its established qualitative result is retained:
+tensor or connector similarity optimum and downstream retrieval or generation
+optimum did not necessarily coincide. Tensor similarity alone therefore cannot
+establish functional VLM compatibility.

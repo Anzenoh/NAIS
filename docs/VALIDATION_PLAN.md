@@ -84,3 +84,25 @@ If a required command was not run, say `NOT RUN`. Never infer success.
 ## 5. Scientific outcomes versus software acceptance
 
 A metric being unexpectedly low, high, asymmetric, or null does not fail the software task if the implementation and controls are correct. Conversely, a plausible-looking figure does not pass a task when the code, split, or artifact contract is invalid.
+
+## 6. Phase 2 adapter validation
+
+Before fitting or evaluation, assert:
+
+- exact source and target feature-bank identities, taps, shapes, image IDs, and
+  ordering match the approved contract;
+- the `p1_1000` Train 800, Validation 100, Test 100 split with seed 43 is
+  isolated by image ID and no patch row crosses a partition;
+- only adapter parameters are trainable;
+- source encoders, target CLIP, TinyLLaVA connector, and TinyLLaVA LLM are
+  frozen and remain unchanged;
+- a deterministic synthetic known mapping is recovered where the adapter family
+  admits such a control;
+- fitting and hyperparameter selection use only Train/Validation information;
+- held-out Test evaluation occurs only for finalized configurations;
+- every finalized method uses identical prompt and decoding configuration for
+  frozen-LLM generation.
+
+Required evaluation spans patch, connector, same-image identity, and actual
+generation behavior. A software `PASS` establishes contract-correct execution;
+it does not assert that scientific performance is sufficient.

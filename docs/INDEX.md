@@ -9,11 +9,14 @@ This file is the navigation entry point for Codex and human reviewers.
 | `RESEARCH_CONTRACT.md` | Invariants that define a valid experiment | Before extraction, metrics, or adapter work |
 | `EXPERIMENT_PROTOCOL_V0.md` | Phase 0/1 scientific procedure and gates | Extraction and analysis tasks |
 | `METRIC_DEFINITIONS.md` | Exact metric semantics and anti-leakage rules | Metric implementation and review |
+| `EXPERIMENT_PROTOCOL_P2_ADAPTER.md` | Phase 2 same-Query adapter procedure, split roles, complexity ladder, and gates | Phase 2 adapter tasks |
+| `VLM_COMPATIBILITY_METRICS.md` | Patch, connector, identity, and generation evaluation contract | Phase 2 evaluation and review |
 | `VALIDATION_PLAN.md` | Software validation levels and PASS/PARTIAL/BLOCKED criteria | Every implementation task |
 | `REPRODUCIBILITY.md` | Required environment, checkpoint, dataset, and run metadata | Environment and execution tasks |
 | `DECISION_LOG.md` | Accepted and open architectural/research decisions | Planning or scope changes |
 | `TASK_WORKFLOW.md` | Human–ChatGPT–Codex execution and review process | Before issuing tasks |
 | `contracts/FEATURE_ARTIFACT_SCHEMA.md` | Canonical tensor, manifest, tap, and storage contract | Extractor and artifact work |
+| `contracts/VLM_ADAPTER_COMPATIBILITY_V1.md` | Normative frozen-VLM and direct-adapter compatibility contract | Every Phase 2 adapter task |
 | `templates/TASK_TEMPLATE.md` | Template for new task specifications | Writing a Codex task |
 | `templates/RUN_REPORT_TEMPLATE.md` | Mandatory implementation evidence format | Completing a task |
 | `templates/REVIEW_TEMPLATE.md` | Human/ChatGPT review verdict format | Reviewing completed work |
@@ -39,6 +42,16 @@ This file is the navigation entry point for Codex and human reviewers.
 - `RESEARCH_CONTRACT.md`
 - `METRIC_DEFINITIONS.md`
 - `VALIDATION_PLAN.md`
+
+### Phase 2 adapter task
+
+- `PROJECT_STATUS.md`
+- `RESEARCH_CONTRACT.md`
+- `EXPERIMENT_PROTOCOL_P2_ADAPTER.md`
+- `VLM_COMPATIBILITY_METRICS.md`
+- `contracts/VLM_ADAPTER_COMPATIBILITY_V1.md`
+- `VALIDATION_PLAN.md`
+- `REPRODUCIBILITY.md`
 
 ### Scope or research design change
 

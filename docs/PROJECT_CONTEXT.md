@@ -4,7 +4,18 @@
 
 Different VLM and MLLM systems use vision encoders trained with different objectives and sometimes different architectures. Their hidden states may differ in token count, channel dimension, layer depth, normalization, spatial organization, and semantic emphasis.
 
-This project investigates whether those representations nevertheless share recoverable structure. The long-term direction is to determine whether outputs from different encoders can be mapped into a common visual feature space through a small adapter. The current phase does not implement the final universal adapter or connect features to an LLM.
+Phase 0 and Phase 1 established whether those representations share recoverable
+structure. The current Phase 2 problem is query-conditioned encoder-to-VLM
+compatibility:
+
+```text
+A_s(E_s(x)) -> E_t(x)
+```
+
+The adapter must directly transform the source feature of the same Query image
+into the target encoder feature space. The research question is what minimum
+transformation complexity restores functional compatibility with the frozen
+target VLM.
 
 ## 2. Primary objective
 
@@ -45,7 +56,17 @@ These are candidates, not silently interchangeable aliases. Exact checkpoint rev
 - run pairing-shuffle and synthetic controls;
 - generate layer-pair and minimum-transform-complexity reports.
 
-## 5. Explicit non-goals for Phase 0 and Phase 1
+### Phase 2 - Query-conditioned adapter compatibility
+
+- target TinyLLaVA native CLIP pre-connector patch features `[N,196,768]`;
+- source candidates SigLIP2 `final_norm` and DINOv3 block 11 after removing
+  CLS 1 plus register tokens 4, each `[N,196,768]`;
+- source encoders, target CLIP, connector, and LLM frozen;
+- adapter-only fitting or training;
+- patch, connector, identity, and frozen-LLM generation evaluation for every
+  finalized method.
+
+## 5. Historical non-goals for Phase 0 and Phase 1
 
 - LLM integration;
 - multimodal projector comparison;
@@ -56,6 +77,9 @@ These are candidates, not silently interchangeable aliases. Exact checkpoint rev
 - claiming a universal representation before held-out tests exist;
 - treating a high CKA value alone as proof of functional interchangeability.
 
+These restrictions remain binding for Phase 0/1. Phase 2 does not permit model
+fine-tuning; it permits only adapter fitting plus frozen downstream evaluation.
+
 ## 6. Expected research outputs
 
 - a layer-to-layer similarity atlas for each encoder pair;
@@ -64,6 +88,8 @@ These are candidates, not silently interchangeable aliases. Exact checkpoint rev
 - a map of the simplest transformation that reaches each measured performance level;
 - documented failure modes and encoder-specific information;
 - a justified specification for a later common-space adapter.
+- a Phase 2 comparison identifying the minimum direct adapter complexity that
+  restores functional compatibility with the frozen target VLM.
 
 ## 7. Known execution context
 

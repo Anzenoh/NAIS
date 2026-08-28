@@ -1,34 +1,29 @@
 # Project Status
 
-- Status date: 2026-07-12
-- Current phase: `P0 — specification and repository bootstrap`
-- Overall status: `NOT_STARTED`
-- Last verified task: none
-- Active task: `VEA-P0-T001`
+- Status date: 2026-08-28
+- Current phase: `Phase 2 - query-conditioned encoder-to-VLM adapter compatibility`
+- Documentation state: synchronized by `VEA-P2-T001E-R1R`
 - Source of truth: this repository and its tracked contracts
 
-## Accepted baseline
+## Accepted state
 
-- Encoder-only research comes before any LLM integration.
-- Encoders remain frozen in Phase 0 and Phase 1.
-- Canonical image geometry is shared; numeric normalization remains model-specific.
-- The first comparison set is CLIP ViT-B/16, SigLIP2 Base Patch16-224, and DINOv3 ViT-B/16.
-- Global features are scanned across all comparable layers before storing patch features at selected depths.
-- A high or low scientific metric is an experimental result, not a software PASS condition.
-
-## Open decisions
-
-1. Exact local Python and package baseline.
-2. Exact checkpoint revision hashes.
-3. Local path and license status for the smoke image manifest.
-4. Local path and selection procedure for the 1,000-image manifest.
-5. Final bulk-extraction runtime and GPU.
-6. Empirical thresholds for similarity interpretation; these must not be invented before baseline distributions exist.
+- Phase 0/1 encoder-only representation analysis remains the historical
+  foundation; its scientific contracts and accepted results remain valid.
+- `VEA-P2-T001D` anchor transport is retained as a historical/comparison
+  baseline, not the primary current adapter method.
+- No direct learned Phase 2 adapter experiment has yet been accepted.
+- The validated `p1_1000` feature banks and image-level 800/100/100 split are
+  reusable by default.
+- Source encoders, target CLIP, TinyLLaVA connector, and TinyLLaVA LLM remain
+  frozen; only an adapter may be fitted or trained.
+- The first adapter experiment configuration and hyperparameters remain `OPEN`.
 
 ## Next required action
 
-Execute `tasks/VEA-P0-T001-repository-audit.md`. Do not start extractor implementation before the audit is reviewed.
+Freeze the first Phase 2 adapter experiment configuration and hyperparameters
+in a separately reviewed Task before implementation or execution.
 
 ## Update rule
 
-Update this file only through an explicit task after evidence has been reviewed. Do not mark a task complete based solely on Codex's narrative; use commands, test output, manifests, and diffs.
+Update this file only through an explicit task after evidence has been reviewed.
+Software PASS and scientific performance remain separate judgments.

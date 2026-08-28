@@ -15,6 +15,11 @@
 | VEA-D009 | Use safe tensor shards with JSON manifests as the canonical generated feature format | Provides portable, non-pickle tensor storage and explicit image ordering | Accepted |
 | VEA-D010 | Keep tested logic in a Python package; notebooks are visualization clients only | Improves reproducibility and testability | Accepted |
 | VEA-D011 | Permit the isolated `vea.p2.vlm_compatibility_pilot.v0` frozen native replay boundary | Tests serialization and connector-boundary software compatibility without changing Phase 0/1 conclusions or training any parameter | Accepted |
+| VEA-D012 | Make the same-Query query-conditioned adapter the primary Phase 2 research lane | Directly tests whether `Adapter(E_source(x))` can restore the target feature and downstream behavior for the current Query | Accepted |
+| VEA-D013 | Retain T001D anchor transport as historical/comparison evidence only | It selects or combines other-image target features and is not a direct transformation of the current Query source feature | Accepted |
+| VEA-D014 | Permit fitting or training only the adapter while source encoders, target CLIP, TinyLLaVA connector, and TinyLLaVA LLM remain frozen | Isolates the minimum transformation required without adapting the target VLM | Accepted |
+| VEA-D015 | Evaluate every finalized adapter at patch, connector, same-image identity, and actual generation levels | Tensor similarity alone did not establish functional compatibility; validation-rejected candidates need not receive Test generation | Accepted |
+| VEA-D016 | Reuse the immutable `p1_1000` 800/100/100 image-level split and validated feature banks by default | Preserves pairing and prevents unnecessary extraction or patch-level leakage | Accepted |
 
 ## Open decisions
 
@@ -25,6 +30,13 @@
 | VEA-O003 | 1,000-image selection policy and manifest | Phase 1 extraction |
 | VEA-O004 | Bulk CUDA host and batch size | Phase 1 extraction |
 | VEA-O005 | Empirical similarity interpretation bands | Final Phase 1 analysis, after null and repeat distributions |
+| VEA-O006 | Exact Phase 2 adapter experiment ID | First Phase 2 adapter configuration Task |
+| VEA-O007 | Ridge lambda grid, low-rank rank grid, and MLP bottleneck size | Relevant adapter-family implementation |
+| VEA-O008 | Optimizer, learning rate, epochs, and early stopping | First optimizer-trained adapter configuration |
+| VEA-O009 | Exact patch loss, connector auxiliary loss, and connector-loss weight | First Phase 2 adapter configuration Task |
+| VEA-O010 | Parameter budget, latency budget, and DINOv3 versus SigLIP2 execution order | First Phase 2 adapter configuration Task |
+| VEA-O011 | Exact generation prompt, temperature, top_p, and max_new_tokens | First Phase 2 generation configuration |
+| VEA-O012 | Semantic generation metric | Separately approved optional-metric Task |
 
 ## Change procedure
 
