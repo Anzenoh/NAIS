@@ -13,9 +13,11 @@
   foundation; its scientific contracts and accepted results remain valid.
 - `VEA-P2-T001D` anchor transport is retained as a historical/comparison
   baseline, not the primary current adapter method.
-- No direct Phase 2 adapter implementation or scientific experiment has yet run.
-- The validated `p1_1000` feature banks and image-level 800/100/100 split are
-  reusable by default.
+- `VEA-P2-T002B` implemented and synthetic/unit validated the pure NumPy direct
+  linear-adapter numerical core. No real adapter fitting or Test evaluation has run.
+- `VEA-P2-T002C` implemented the read-only, memory-bounded T001D feature-bank
+  binding preflight. Real feature-bank identity remains unaccepted until the
+  user runs it against the actual completed T001D run root.
 - Source encoders, target CLIP, TinyLLaVA connector, and TinyLLaVA LLM remain
   frozen; only an adapter may be fitted or trained.
 - The first direct linear experiment now freezes both source lanes, four linear
@@ -24,7 +26,10 @@
 
 ## Next required action
 
-Implement the frozen VEA Phase 2 linear adapter configuration with synthetic/unit validation only; do not start the real feature-bank, connector, or LLM run in the implementation Task.
+Run the VEA-P2-T002C feature-bank preflight against the completed real T001D
+run root on the Apple host and submit the bounded JSON result for review.
+
+TinyLLaVA connector/LLM runtime integration remains deferred.
 
 ## Update rule
 
