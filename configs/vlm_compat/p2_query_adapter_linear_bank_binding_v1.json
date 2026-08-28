@@ -1,0 +1,15 @@
+{
+  "schema_id": "vea.p2.query_adapter_linear_bank_binding.v1",
+  "experiment_id": "vea.p2.query_adapter_linear.v1",
+  "adapter_config_path": "configs/vlm_compat/p2_query_adapter_linear_v1.json",
+  "adapter_config_sha256": "28835f065f9a00d756316ced0a1d5ad3e74a3709d88a83abc47ddbe1d6f142a1",
+  "accepted_preflight_json_sha256": "a34180bb9c289be4d17a0b43b58d66af1ce520e64000fe2876a76069ae595127",
+  "t001d_plan_id": "e6a83112539fa1c37656dda4d6bf43ba8208d5d96178b07ed2b8293f97b6816e",
+  "manifest_sha256": "1819bbc6235dd4805d71642e63e73112ce2e918135ec94f46493077698be92da",
+  "banks": {
+    "SIGLIP2": "ed4e350661c0086b40100d7ce70e242f87d46c0671ac2f6842ffbd10db61e09a",
+    "DINOV3": "eafa1a20af2f2b383e6bf08c7b91246475c31fb51ebeda0da2e541753d16fdad",
+    "TARGET_CLIP": "62b25a89f066ddfe24264202c60c5222b661fd024b23df52266a02c4fd2f18a8"
+  },
+  "path_identity_policy": "T001D run-root paths are runtime provenance only and are excluded from normative bank identity."
+}
