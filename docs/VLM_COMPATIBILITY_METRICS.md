@@ -68,3 +68,22 @@ do not require Test generation.
 
 Logit KL, top-k token overlap, and a semantic generation metric are optional and
 non-mandatory until separately approved. No semantic metric is selected here.
+
+## 7. First linear experiment generation freeze
+
+For `vea.p2.query_adapter_linear.v1`, the authoritative configuration freezes:
+
+```text
+prompt: "What is shown in this image? Answer briefly."
+max_new_tokens: 32
+num_beams: 1
+do_sample: false
+top_p: null
+temperature: 0
+```
+
+These exactly reuse the deterministic T001D settings. Native generation occurs
+once for each of 100 Test images; eight finalized adapted source-method
+configurations each generate for all 100 Test images, for 900 planned
+generations total. Ridge lambda candidates receive no Validation generation.
+Future experiments require their own separately approved exact configuration.

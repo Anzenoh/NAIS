@@ -108,17 +108,29 @@ Before Test:
 
 Software acceptance and scientific performance are reported separately.
 
-## 9. OPEN configuration fields
+## 9. First frozen linear experiment
 
-The following remain `OPEN` until a separately reviewed configuration Task:
+`configs/vlm_compat/p2_query_adapter_linear_v1.json` freezes the first direct
+experiment, `vea.p2.query_adapter_linear.v1`. It includes both source lanes in
+SIGLIP2, DINOV3 order; independent per-source adapters; CALIBRATED,
+ORTHOGONAL_PROCRUSTES, FULL_LINEAR, and RIDGE; the nine-value normalized Ridge
+grid; deterministic Validation selection; held-out Test evaluation; exact T001D
+generation settings; and the float64-fit/float32-storage numeric policy.
 
-- exact Phase 2 adapter experiment ID;
-- Ridge lambda grid;
+This freeze is configuration only. No adapter has been implemented or fitted,
+and no feature bank, connector, or LLM has been executed by this Task.
+
+## 10. Remaining OPEN configuration fields
+
+The first linear experiment does not assign future complexity settings. These
+remain `OPEN`:
+
 - low-rank rank grid;
-- MLP bottleneck size;
-- optimizer, learning rate, epochs, and early stopping;
-- exact patch loss, connector auxiliary loss, and connector-loss weight;
-- parameter budget and latency budget;
-- DINOv3 versus SigLIP2 execution order;
-- exact generation prompt, temperature, `top_p`, and `max_new_tokens`;
+- MLP bottleneck size, optimizer, learning rate, epochs, and early stopping;
+- MLP patch/connector multi-objective loss and connector-loss weight;
+- hard parameter and latency budgets;
+- spatial adapter architecture;
 - semantic generation metric.
+
+Exact source and target feature-bank artifact paths and hashes also remain open
+pending fail-closed identity verification before real execution.

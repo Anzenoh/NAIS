@@ -1,0 +1,231 @@
+{
+  "schema_id": "vea.p2.query_adapter_linear_config.v1",
+  "experiment_id": "vea.p2.query_adapter_linear.v1",
+  "research_relation": "A_s(E_s(x)) -> E_target(x) for the same Query image x",
+  "manifest": {
+    "path": "data/manifests/p1_1000.jsonl",
+    "sha256": "1819bbc6235dd4805d71642e63e73112ce2e918135ec94f46493077698be92da",
+    "metadata_path": "data/manifests/p1_1000.metadata.json",
+    "row_count": 1000,
+    "split_algorithm_id": "numpy-pcg64-largest-remainder-v1",
+    "split_identity_sha256": "6c299a79b22b99b4c68c3de471b9d5c7c756b6bf4a0f78b831a97e30a0a10c5f",
+    "split_seed": 43,
+    "partition_roles": {
+      "train": {"image_count": 800, "fit": true, "select": false, "test": false},
+      "validation": {"image_count": 100, "fit": false, "select": true, "test": false},
+      "test": {"image_count": 100, "fit": false, "select": false, "test": true}
+    },
+    "partition_unit": "image_id_before_patch_flattening",
+    "patches_per_image": 196,
+    "expected_train_patch_rows": 156800,
+    "verify_train_patch_row_count": true,
+    "patch_level_leakage_forbidden": true
+  },
+  "source_order": ["SIGLIP2", "DINOV3"],
+  "sources": {
+    "SIGLIP2": {
+      "model_id": "google/siglip2-base-patch16-224",
+      "revision": "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2",
+      "profile_path": "configs/extraction_profiles/p1_1000_apple_fp32_v0.json",
+      "profile_sha256": "026b03c45f4747b11a47ffb1db597c4e5d74e2897527d21d5a17b7afca994f7e",
+      "runtime_profile_path": "configs/runtime_profiles/p1_apple_main_cuda_fp32_v0.json",
+      "runtime_profile_sha256": "7e578ea3451e595e243e0e6a39058b0eb12a8641ce433bc60b6039b23e2cbdf5",
+      "tap": "final pre-projection normalized vision patch",
+      "tap_name": "final_norm",
+      "preprocessing": "canonical_224_center_crop_v0 then SigLIP numeric normalization",
+      "special_token_policy": "siglip_no_special_tokens_verified_runtime_v1",
+      "patch_shape": [196, 768],
+      "frozen": true
+    },
+    "DINOV3": {
+      "model_id": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+      "revision": "5931719e67bbdb9737e363e781fb0c67687896bc",
+      "profile_path": "configs/extractor_profiles/dinov3_vit_b16_r5931719_apple_cuda_fp32_v1.json",
+      "profile_sha256": "771fba9fa683065d628109856385405e14d87cdaea38c5b448d0aba8fb6508bc",
+      "runtime_profile_path": "configs/runtime_profiles/dinov3_apple_cuda_fp32_v1.json",
+      "runtime_profile_sha256": "51af286a73d987ba34f8c5f54b96b91083191f7e51d62d6b02b7503459cd717f",
+      "snapshot_profile_path": "configs/model_snapshots/dinov3_vit_b16_r5931719_v0.json",
+      "snapshot_profile_sha256": "df90c58f2fd603b1e7979576270e67924bd84594eb08ad337edc3fdcdd2b80ac",
+      "tap": "hidden_states[11]",
+      "tap_name": "block_11",
+      "preprocessing": "canonical_224_center_crop_v0 then manual ImageNet FP32 normalization",
+      "special_token_policy": "dinov3_cls1_register4_prefix_verified_runtime_v1",
+      "patch_shape": [196, 768],
+      "frozen": true
+    }
+  },
+  "target": {
+    "key": "TARGET_CLIP",
+    "model_id": "openai/clip-vit-base-patch16",
+    "revision": "57c216476eefef5ab752ec549e440a49ae4ae5f3",
+    "tap": "hidden_states[-2]",
+    "tap_name": "block_11",
+    "preprocessing": "TinyLLaVA pinned native load_image/process_images",
+    "special_token_policy": "clip_cls1_prefix_verified_runtime_v1",
+    "feature_boundary": "TinyLLaVA native CLIP pre-connector patch-only",
+    "patch_shape": [196, 768],
+    "frozen": true
+  },
+  "target_vlm": {
+    "config_path": "configs/vlm_compat/tinyllava_openelm_clip_anchor_v0.json",
+    "config_sha256": "78242f4062fe748826aad0b51ae50ddce1c4bcbb06143396e87d9a862585ac8a",
+    "model_id": "jiajunlong/TinyLLaVA-OpenELM-450M-CLIP-0.55B",
+    "revision": "0bff7b92d5b9ef4520c61b1f7872d7d1e13537a6",
+    "connector_input_shape": [196, 768],
+    "connector_output_shape": [196, 1536],
+    "vision_encoder_frozen": true,
+    "connector_frozen": true,
+    "llm_frozen": true
+  },
+  "adapter_scope": {
+    "independent_adapter_per_source": true,
+    "shared_adapter": false,
+    "trainable_component": "adapter_only",
+    "same_query_required": true
+  },
+  "method_order": ["CALIBRATED", "ORTHOGONAL_PROCRUSTES", "FULL_LINEAR", "RIDGE"],
+  "methods": {
+    "CALIBRATED": {
+      "input": "RAW_SOURCE",
+      "fit_partition": "train",
+      "statistics_unit": "all_train_patch_rows",
+      "source_std_ddof": 0,
+      "target_std_ddof": 0,
+      "source_std_floor": 1e-6,
+      "scale_formula": "target_std / max(source_std, 1e-6)",
+      "bias_formula": "target_mean - source_mean * scale",
+      "apply_formula": "y = x * scale + bias"
+    },
+    "ORTHOGONAL_PROCRUSTES": {
+      "input": "CALIBRATED_SOURCE",
+      "fit_partition": "train",
+      "statistics_unit": "all_train_patch_rows",
+      "center_source": true,
+      "center_target": true,
+      "cross_covariance": "Xc.T @ Yc",
+      "factorization": "U,S,Vt = svd(Xc.T @ Yc)",
+      "rotation": "R = U @ Vt",
+      "determinant_correction": false,
+      "apply_formula": "y = (x_calibrated - mean_train_x_calibrated) @ R + mean_train_y"
+    },
+    "FULL_LINEAR": {
+      "input": "RAW_SOURCE",
+      "fit_partition": "train",
+      "statistics_unit": "all_train_patch_rows",
+      "calibration_preprocessing": false,
+      "center_source": true,
+      "center_target": true,
+      "objective": "argmin_W ||Xc W - Yc||_F^2",
+      "intercept_formula": "b = mu_y - mu_x @ W_OLS",
+      "apply_formula": "y = (x - mu_x) @ W_OLS + mu_y",
+      "solver_requirement": "numerically_justified_least_squares_without_explicit_inverse"
+    },
+    "RIDGE": {
+      "input": "RAW_SOURCE",
+      "fit_partition": "train",
+      "selection_partition": "validation",
+      "statistics_unit": "all_train_patch_rows",
+      "center_source": true,
+      "center_target": true,
+      "objective": "argmin_W ||Xc W - Yc||_F^2 + alpha ||W||_F^2",
+      "intercept_regularized": false,
+      "alpha_parameterization": "alpha = lambda_normalized * N_train_patch_rows",
+      "lambda_normalized_grid": [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0],
+      "independent_selection_per_source": true,
+      "optimizer": null,
+      "gradient": false,
+      "solver_requirement": "numerically_justified_linear_solve_without_explicit_inverse"
+    }
+  },
+  "ridge_validation_selection": {
+    "partition": "validation",
+    "llm_generation_per_candidate": false,
+    "hierarchy": [
+      {"priority": 1, "metric": "same_image_recall_at_1", "direction": "highest"},
+      {"priority": 2, "metric": "same_image_recall_at_5", "direction": "highest"},
+      {"priority": 3, "metric": "connector_cosine", "direction": "highest"},
+      {"priority": 4, "metric": "lambda_normalized", "direction": "smallest"}
+    ],
+    "recorded_nonselector_metrics": ["patch_cosine", "patch_nmse", "patch_r2", "connector_nmse"],
+    "test_metrics_forbidden": true,
+    "retrieval_semantics": {
+      "candidate_pooling": "mean_over_196_patches",
+      "reference_pooling": "mean_over_196_patches",
+      "similarity": "cosine_float64",
+      "ranking": "descending_stable",
+      "tie_policy": "lower_reference_index_first"
+    }
+  },
+  "test_evaluation": {
+    "finalized_method_order": ["CALIBRATED", "ORTHOGONAL_PROCRUSTES", "FULL_LINEAR", "RIDGE_SELECTED"],
+    "source_count": 2,
+    "adapted_configuration_count": 8,
+    "native_reference": "TARGET_CLIP",
+    "best_method_preselection_forbidden": true,
+    "metrics": {
+      "patch": ["cosine", "nmse", "r2"],
+      "connector": ["cosine", "nmse"],
+      "identity": ["same_image_recall_at_1", "same_image_recall_at_5"],
+      "llm": ["generated_text", "native_exact_match", "token_unigram_f1"]
+    }
+  },
+  "generation": {
+    "prompt": "What is shown in this image? Answer briefly.",
+    "max_new_tokens": 32,
+    "num_beams": 1,
+    "do_sample": false,
+    "top_p": null,
+    "temperature": 0,
+    "deterministic": true,
+    "native_reference_once_per_test_image": true,
+    "validation_generation_required": false,
+    "planned_native_generations": 100,
+    "planned_adapted_generations": 800,
+    "planned_total_generations": 900,
+    "derive_and_verify_counts": true,
+    "reuse_t001d_tokenizer_chat_abi_stopping_connector_and_llm_path": true
+  },
+  "numeric_policy": {
+    "fit_accumulation_dtype": "float64",
+    "linear_solve_dtype": "float64",
+    "stored_adapter_parameter_dtype": "float32",
+    "stored_adapted_feature_dtype": "float32",
+    "similarity_metric_dtype": "float64",
+    "target_vlm_runtime_dtype": "float16",
+    "mixed_precision_fitting": false
+  },
+  "efficiency_reporting": {
+    "record_fitted_scalar_and_storage_count": true,
+    "record_serialized_adapter_bytes": true,
+    "record_adapter_application_latency_separately": true,
+    "full_linear_and_ridge_affine_scalar_values": 590592,
+    "hard_parameter_budget": "OPEN",
+    "hard_latency_budget": "OPEN"
+  },
+  "optional_metrics": {
+    "logit_kl": "disabled",
+    "top_k_token_overlap": "disabled",
+    "semantic_generation_metric": "disabled"
+  },
+  "feature_bank_policy": {
+    "default": "reuse_existing_validated_feature_banks",
+    "encoder_reextraction_scheduled": false,
+    "source_artifact_paths_and_hashes": "OPEN_PENDING_IDENTITY_VERIFICATION",
+    "target_artifact_path_and_hash": "OPEN_PENDING_IDENTITY_VERIFICATION",
+    "fail_closed_on_identity_shape_or_order_mismatch": true
+  },
+  "remaining_open_fields": [
+    "low_rank_rank_grid",
+    "mlp_bottleneck_size",
+    "mlp_optimizer",
+    "mlp_learning_rate",
+    "mlp_epoch_count",
+    "mlp_early_stopping",
+    "mlp_patch_connector_multi_objective_loss",
+    "connector_loss_weight_for_trainable_nonlinear_adapters",
+    "hard_parameter_budget",
+    "hard_latency_budget",
+    "spatial_adapter_architecture",
+    "semantic_generation_metric"
+  ]
+}

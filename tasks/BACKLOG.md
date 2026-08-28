@@ -11,11 +11,11 @@ historical/comparison baseline.
 
 ## Current Phase 2 order
 
-1. Freeze the first Phase 2 adapter experiment configuration and
-   hyperparameters in a separately reviewed Task.
-2. Implement and evaluate the first direct query-conditioned linear adapter.
-3. Extend transformation complexity only after reviewed evidence shows that a
-   simpler method is insufficient.
+1. Implement the frozen direct linear adapter experiment harness.
+2. Validate the implementation on synthetic and fixture data.
+3. Resolve real feature-bank artifacts and execute the real experiment only
+   through a separate approved `EXPERIMENT` Task.
+4. Add low-rank or MLP complexity only after reviewed linear-adapter evidence.
 
 These entries describe order only; this documentation task does not create or
 execute any of them.

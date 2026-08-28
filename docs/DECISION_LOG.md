@@ -20,6 +20,12 @@
 | VEA-D014 | Permit fitting or training only the adapter while source encoders, target CLIP, TinyLLaVA connector, and TinyLLaVA LLM remain frozen | Isolates the minimum transformation required without adapting the target VLM | Accepted |
 | VEA-D015 | Evaluate every finalized adapter at patch, connector, same-image identity, and actual generation levels | Tensor similarity alone did not establish functional compatibility; validation-rejected candidates need not receive Test generation | Accepted |
 | VEA-D016 | Reuse the immutable `p1_1000` 800/100/100 image-level split and validated feature banks by default | Preserves pairing and prevents unnecessary extraction or patch-level leakage | Accepted |
+| VEA-D017 | Freeze `vea.p2.query_adapter_linear.v1` with source order SIGLIP2 then DINOV3 and independent per-source adapters | Establishes the first implementation-ready same-Query direct adapter experiment without a shared adapter | Accepted |
+| VEA-D018 | Compare CALIBRATED, ORTHOGONAL_PROCRUSTES, FULL_LINEAR, and RIDGE in the first direct experiment | Covers the first four approved linear-complexity baselines while excluding low-rank and nonlinear methods | Accepted |
+| VEA-D019 | Search normalized Ridge lambdas `[1e-6,1e-5,1e-4,1e-3,1e-2,1e-1,1,10,100]` independently per source | Makes regularization scale explicit through `alpha=lambda_normalized*N_train_patch_rows` | Accepted |
+| VEA-D020 | Select Ridge on Validation by R@1, then R@5, connector cosine, then smallest normalized lambda | Provides a deterministic functional-first hierarchy with no Test-informed selection | Accepted |
+| VEA-D021 | Reuse the exact T001D deterministic generation settings and skip Validation generation during Ridge search | Makes all eight finalized Test configurations comparable without generation for every lambda candidate | Accepted |
+| VEA-D022 | Use float64 fitting/solves and similarity metrics with float32 stored adapter parameters and adapted features | Preserves numerical stability while retaining the validated injection storage boundary | Accepted |
 
 ## Open decisions
 
@@ -30,13 +36,15 @@
 | VEA-O003 | 1,000-image selection policy and manifest | Phase 1 extraction |
 | VEA-O004 | Bulk CUDA host and batch size | Phase 1 extraction |
 | VEA-O005 | Empirical similarity interpretation bands | Final Phase 1 analysis, after null and repeat distributions |
-| VEA-O006 | Exact Phase 2 adapter experiment ID | First Phase 2 adapter configuration Task |
-| VEA-O007 | Ridge lambda grid, low-rank rank grid, and MLP bottleneck size | Relevant adapter-family implementation |
-| VEA-O008 | Optimizer, learning rate, epochs, and early stopping | First optimizer-trained adapter configuration |
-| VEA-O009 | Exact patch loss, connector auxiliary loss, and connector-loss weight | First Phase 2 adapter configuration Task |
-| VEA-O010 | Parameter budget, latency budget, and DINOv3 versus SigLIP2 execution order | First Phase 2 adapter configuration Task |
-| VEA-O011 | Exact generation prompt, temperature, top_p, and max_new_tokens | First Phase 2 generation configuration |
+| VEA-O007 | Low-rank rank grid and MLP bottleneck size | Future complexity-extension configuration |
+| VEA-O008 | MLP optimizer, learning rate, epochs, and early stopping | Future optimizer-trained adapter configuration |
+| VEA-O009 | MLP patch/connector multi-objective loss and connector-loss weight | Future nonlinear adapter configuration |
+| VEA-O010 | Hard parameter and latency budgets | Future complexity comparison |
 | VEA-O012 | Semantic generation metric | Separately approved optional-metric Task |
+
+Resolved by `VEA-P2-T002A`: VEA-O006 and VEA-O011. The Ridge portion of
+VEA-O007 and the source-order portion of VEA-O010 are also resolved for the
+first linear experiment by VEA-D017 through VEA-D022.
 
 ## Change procedure
 
