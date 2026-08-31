@@ -1,0 +1,27 @@
+{
+  "schema_id": "vea.p2.query_adapter_linear_test_binding.v1",
+  "experiment_id": "vea.p2.query_adapter_linear.v1",
+  "bank_binding_config_path": "configs/vlm_compat/p2_query_adapter_linear_bank_binding_v1.json",
+  "validation_result_sha256": "10777d3aa4b19683beecb3b78ae5cea21d20538ae126db9a65daf434aa604ac9",
+  "validation_runtime_identity_sha256": "ac5438b0a38fb2a6ba8b36ea50215d1ff1df5bfa1bcee89a0f7a8d4887097026",
+  "selected_ridge_lambda_normalized": {
+    "SIGLIP2": 1e-6,
+    "DINOV3": 1e-4
+  },
+  "finalized_adapter_artifacts": {
+    "SIGLIP2": {
+      "CALIBRATED": {"relative_path": "fits/siglip2_calibrated.npz", "sha256": "040e644789f986fb83b08b1c029b047a36d58d213c05962d6489974413eafd19"},
+      "ORTHOGONAL_PROCRUSTES": {"relative_path": "fits/siglip2_orthogonal_procrustes.npz", "sha256": "92037058e46f70532aa5b92dcf9f42a6d5b6361f1a793956e985dfb3f592ddc6"},
+      "FULL_LINEAR": {"relative_path": "fits/siglip2_full_linear.npz", "sha256": "0661e426aa62623283c971925d2df93fe6621217d746f8583c3158bc31984974"},
+      "RIDGE_SELECTED": {"relative_path": "fits/siglip2_ridge_1e-06.npz", "sha256": "8446daffc6a8e316442694b330ea10159f5e5ef3c54b2a1ee307bf7e03417492"}
+    },
+    "DINOV3": {
+      "CALIBRATED": {"relative_path": "fits/dinov3_calibrated.npz", "sha256": "59aad551998b91b45437419cffc0b9e4dd25ffef46fdeb5f722cba65b804e8e7"},
+      "ORTHOGONAL_PROCRUSTES": {"relative_path": "fits/dinov3_orthogonal_procrustes.npz", "sha256": "6b6073108c29472146b894e462e6e861bb2f405f75166983ff07a923aa69e068"},
+      "FULL_LINEAR": {"relative_path": "fits/dinov3_full_linear.npz", "sha256": "71728c32e2343f9e8e23f45d524142671f10a3eae0b3bbe59c40f8b5a26cecc7"},
+      "RIDGE_SELECTED": {"relative_path": "fits/dinov3_ridge_0.0001.npz", "sha256": "d1d2262f9d44d26cf420d830b23fd6f4989c9bdb28c415f362c6d412d3bd7def"}
+    }
+  },
+  "generation_plan": {"test_images": 100, "native": 100, "adapted": 800, "total": 900},
+  "path_identity_policy": "Apple validation and T001D run-root paths are runtime provenance only, never normative identity."
+}
