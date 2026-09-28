@@ -56,7 +56,7 @@ For every finalized method report:
 
 Prompt, temperature, `top_p`, `max_new_tokens`, tokenizer, stopping behavior,
 and all other decoding settings must be identical across finalized methods.
-Their exact values remain `OPEN` until separately approved.
+Their exact values require a separately approved experiment configuration.
 
 ## 6. Interpretation
 
@@ -84,6 +84,8 @@ temperature: 0
 
 These exactly reuse the deterministic T001D settings. Native generation occurs
 once for each of 100 Test images; eight finalized adapted source-method
-configurations each generate for all 100 Test images, for 900 planned
-generations total. Ridge lambda candidates receive no Validation generation.
-Future experiments require their own separately approved exact configuration.
+configurations each generate for all 100 Test images, for 900 generations in
+the T002E result recorded by T002F. Its generation records confirm 100 native
+and 800 adapted successful rows. Ridge lambda candidates receive no Validation
+generation. Future experiments require their own separately approved exact
+configuration.

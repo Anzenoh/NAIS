@@ -12,11 +12,17 @@ approved Phase 2 contracts.
 
 Before changing files, do the following in order:
 
-1. Read the active task specification under `tasks/`.
-2. Read `docs/INDEX.md`.
-3. Read every document listed in the task's `Read first` section.
-4. Inspect the nearest implementation and tests relevant to the task.
-5. Check `docs/PROJECT_STATUS.md` for the latest verified state.
+1. Read `AGENTS.md`, `.codex/PROJECT_STATE.json`, and the user-approved,
+   non-placeholder `.codex/ACTIVE_TASK.md`.
+2. Treat the Active Task as the sole implementation contract. Report state drift;
+   stale `NO_ACTIVE_TASK` alone is not a veto.
+3. Read additional source, tests, contracts and history only at paths explicitly
+   named by the Active Task. `docs/INDEX.md`, `docs/PROJECT_STATUS.md` and
+   `tasks/` are not default reads.
+
+Do not invent a missing Active Task or alter state to make it agree. Missing or
+ambiguous approval blocks implementation. An explicitly requested read-only
+investigation may instead use the exact task file supplied by the user.
 
 Do not indiscriminately load generated artifacts or unrelated documents. If the task conflicts with `docs/RESEARCH_CONTRACT.md`, stop and report the conflict. Do not silently reinterpret the contract.
 
@@ -73,22 +79,23 @@ The following files are protected and may be edited only when the active task ex
 
 ## 6. Git and scope control
 
-- Inspect Git state before editing. In an environment with a documented
-  filesystem/location false-dirty effect, Task cleanliness is established by
-  all of: exact expected `HEAD`, `git diff --quiet` exit 0,
-  `git diff --cached --quiet` exit 0, and no output from
-  `git ls-files --others --exclude-standard`.
-- `git status` and porcelain remain diagnostic information. Nonempty porcelain
-  alone is advisory only when the documented anomaly applies and every
-  authoritative content-level gate passes.
-- A baseline mismatch, semantic diff, staged diff, or untracked path is always
-  blocking. Never ignore a real content-level failure.
-- Do not use `git update-index --refresh` as routine cleanup.
-- Do not overwrite unrelated user changes.
-- Keep one task ID to one bounded change set.
-- Do not rename or reorganize unrelated files.
-- Do not commit, push, create branches, or open pull requests unless explicitly requested.
-- Generated outputs belong under `artifacts/` and are ignored by Git. Human-readable run reports belong under `reports/runs/`.
+- Apply the approved Active Task's Git entry/handoff checks; verify actual
+  root/Git/common dirs, branch/HEAD/baseline, delivery and each Git exit code.
+- Only for a documented false-dirty anomaly, require expected HEAD, both
+  `git diff --quiet` / `git diff --cached --quiet` exiting 0, and
+  `git ls-files --others --exclude-standard` exiting 0 with no paths before
+  treating porcelain as advisory. Never ignore actual content differences.
+- Preserve unrelated changes. Unexplained diffs/untracked paths, identity drift
+  or relevant unresolved write locks block mutation. Approved exact, non-conflicting
+  residuals are DIRTY_EXPECTED, not CLEAN; read-only work preserves entry state.
+- No automatic stash/reset/restore/clean, lock deletion, index refresh, worktree
+  removal/prune, force push, amend, rebase or merge to clear a gate.
+- Commit/push/branch/PR actions require authorization and exact task paths/delivery.
+  Keep one task ID to one bounded change set; no unrelated staging or reorganization.
+- Reuse verified workspaces; serialize writes sharing a common Git directory.
+  Phantom porcelain alone does not justify a new clone or workspace migration.
+- Generated outputs belong in ignored `artifacts/`; reports in `reports/runs/`.
+  Delivery, independent acceptance, Task closure and next-task approval are separate.
 
 ## 7. Validation behavior
 
@@ -111,5 +118,10 @@ Return these sections:
 6. `Deviations`: anything that differs from the task specification.
 7. `Remaining risks`: unresolved technical or scientific risks.
 8. `Next action`: one concrete next step; do not begin it unless requested.
+
+Include one compact Git handoff: root/Git/common dirs, branch/baseline/HEAD,
+delivery and verification, residual paths, relevant locks, and Task/state/review
+disposition. No extra handoff document; never self-accept. Keep machine-local
+paths in transient output, not committed reports (see §4).
 
 Also create a run report using `docs/templates/RUN_REPORT_TEMPLATE.md` unless the task explicitly says not to.

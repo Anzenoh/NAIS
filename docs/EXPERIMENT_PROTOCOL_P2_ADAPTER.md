@@ -117,8 +117,14 @@ ORTHOGONAL_PROCRUSTES, FULL_LINEAR, and RIDGE; the nine-value normalized Ridge
 grid; deterministic Validation selection; held-out Test evaluation; exact T001D
 generation settings; and the float64-fit/float32-storage numeric policy.
 
-This freeze is configuration only. No adapter has been implemented or fitted,
-and no feature bank, connector, or LLM has been executed by this Task.
+The configuration freeze itself did not execute the experiment. Subsequent
+T002E real-Test generation evidence is recorded by `VEA-P2-T002F` against
+commit `39fbbccd654aa6d0726802b5aaa1377a86f81f6b`: 100 native and 800
+adapted generations over 100 held-out images. The hash-verified generation rows
+show the native vision/connector path and adapted injection/connector
+path were called at their expected boundaries. This records software/runtime
+execution evidence separately from the bounded scientific interpretation;
+independent acceptance remains pending.
 
 ## 10. Remaining OPEN configuration fields
 
@@ -132,5 +138,5 @@ remain `OPEN`:
 - spatial adapter architecture;
 - semantic generation metric.
 
-Exact source and target feature-bank artifact paths and hashes also remain open
-pending fail-closed identity verification before real execution.
+Original Apple artifact paths are not recovered in the T002F evidence record.
+Current validator evidence paths do not replace those historical paths.
