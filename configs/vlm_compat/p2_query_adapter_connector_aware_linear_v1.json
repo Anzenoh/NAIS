@@ -1,0 +1,186 @@
+{
+  "schema_id": "vea.p2.query_adapter_connector_aware_linear_config.v1",
+  "experiment_id": "vea.p2.query_adapter_connector_aware_linear.v1",
+  "task_id": "VEA-P2-T003A",
+  "design_only": true,
+  "research_question": "At fixed Full-Linear affine capacity, does a loss through the exact frozen TinyLLaVA connector improve Validation functional compatibility?",
+  "provenance": {
+    "predecessor_linear_config": {
+      "path": "configs/vlm_compat/p2_query_adapter_linear_v1.json",
+      "sha256": "28835f065f9a00d756316ced0a1d5ad3e74a3709d88a83abc47ddbe1d6f142a1"
+    },
+    "tinyllava_anchor_config": {
+      "path": "configs/vlm_compat/tinyllava_openelm_clip_anchor_v0.json",
+      "sha256": "78242f4062fe748826aad0b51ae50ddce1c4bcbb06143396e87d9a862585ac8a"
+    },
+    "phase2_contract": {
+      "path": "docs/contracts/VLM_ADAPTER_COMPATIBILITY_V1.md",
+      "sha256": "8de1e7e2f546fe4217c4bf1a73438381346da6b49a428aceec2b5aef56f69720"
+    }
+  },
+  "split": {
+    "manifest_identity_source": "predecessor_linear_config.manifest",
+    "split_id": "p1_1000",
+    "seed": 43,
+    "unit": "image_id_before_patch_flattening",
+    "train": {"image_count": 800, "fit": true, "select": false, "access_authorized": true},
+    "validation": {"image_count": 100, "fit": false, "select": true, "access_authorized": true},
+    "test": {"image_count": 100, "fit": false, "select": false, "access_authorized": false},
+    "train_validation_image_id_overlap_forbidden": true,
+    "patch_level_split_forbidden": true
+  },
+  "sources": {
+    "order": ["SIGLIP2", "DINOV3"],
+    "independent_adapter_per_source": true,
+    "shared_adapter": false,
+    "feature_identity_source": "predecessor_linear_config.sources",
+    "target_feature_identity_source": "predecessor_linear_config.target",
+    "same_query_image_required": true
+  },
+  "adapter": {
+    "family": "affine_full_linear",
+    "formula": "Y_hat = X @ W + b",
+    "input_feature_class": "raw_source_preconnector_patch",
+    "output_feature_class": "adapted_target_like_preconnector_patch",
+    "input_patch_shape": [196, 768],
+    "output_patch_shape": [196, 768],
+    "weight_shape": [768, 768],
+    "bias_shape": [768],
+    "trainable_scalar_count_per_source": 590592,
+    "trainable_components": ["adapter.W", "adapter.b"],
+    "additional_trainable_parameters_forbidden": true,
+    "bottleneck_forbidden": true,
+    "rank_constraint_forbidden": true,
+    "residual_mlp_forbidden": true,
+    "spatial_mixing_forbidden": true,
+    "token_mixing_forbidden": true,
+    "initialization": {
+      "reference": "accepted_predecessor_FULL_LINEAR_OLS_per_source",
+      "weight": "accepted_OLS_W",
+      "bias": "accepted_train_target_mean - accepted_train_source_mean @ accepted_OLS_W",
+      "zero_step_output_rtol": 1e-5,
+      "zero_step_output_atol": 1e-5,
+      "runtime_artifact_binding": "OPEN_PENDING_RUNTIME_IDENTITY_BINDING"
+    }
+  },
+  "conditions": {
+    "order": [
+      "OLS_REFERENCE",
+      "PATCH_ONLY_CONTROL",
+      "PATCH_CONNECTOR_0P25",
+      "PATCH_CONNECTOR_1P0",
+      "PATCH_CONNECTOR_4P0"
+    ],
+    "OLS_REFERENCE": {"optimizer": null, "parameter_updates": false, "map": "accepted_predecessor_FULL_LINEAR_OLS"},
+    "PATCH_ONLY_CONTROL": {"optimizer_budget": "shared_gradient_budget", "initialization": "accepted_predecessor_FULL_LINEAR_OLS", "connector_loss_weight": 0.0},
+    "PATCH_CONNECTOR_0P25": {"optimizer_budget": "shared_gradient_budget", "initialization": "accepted_predecessor_FULL_LINEAR_OLS", "connector_loss_weight": 0.25},
+    "PATCH_CONNECTOR_1P0": {"optimizer_budget": "shared_gradient_budget", "initialization": "accepted_predecessor_FULL_LINEAR_OLS", "connector_loss_weight": 1.0},
+    "PATCH_CONNECTOR_4P0": {"optimizer_budget": "shared_gradient_budget", "initialization": "accepted_predecessor_FULL_LINEAR_OLS", "connector_loss_weight": 4.0},
+    "connector_aware_weight_grid": [0.25, 1.0, 4.0],
+    "connector_aware_grid_excludes_zero": true,
+    "same_optimizer_budget_for_all_gradient_conditions": true
+  },
+  "losses": {
+    "normalization_partition": "train",
+    "normalization_constants_fixed_after_train_computation": true,
+    "reduction": "elementwise_mean",
+    "accumulation_dtype": "float32",
+    "D_patch": "mean_train((Y - mean_train(Y))^2)",
+    "L_patch": "mean_batch((Y_hat - Y)^2) / D_patch",
+    "D_connector": "mean_train((C(Y) - mean_train(C(Y)))^2)",
+    "L_connector": "mean_batch((C(Y_hat) - C(Y))^2) / D_connector",
+    "L_total": "L_patch + lambda_connector * L_connector",
+    "denominators_must_be_finite_positive": true,
+    "validation_or_test_statistics_in_denominators_forbidden": true,
+    "generation_token_semantic_retrieval_or_test_loss_forbidden": true
+  },
+  "connector_autograd_boundary": {
+    "identity_source": "provenance.tinyllava_anchor_config",
+    "model_id": "jiajunlong/TinyLLaVA-OpenELM-450M-CLIP-0.55B",
+    "revision": "0bff7b92d5b9ef4520c61b1f7872d7d1e13537a6",
+    "connector_input_shape": [196, 768],
+    "connector_output_shape": [196, 1536],
+    "source_encoders_target_clip_connector_and_llm_eval": true,
+    "source_encoders_target_clip_connector_and_llm_requires_grad": false,
+    "adapter_only_receives_gradients": true,
+    "candidate_connector_forward_differentiable_wrt_Y_hat": true,
+    "candidate_preconnector_patch_dtype": "float32",
+    "connector_forward_dtype": "float16",
+    "connector_output_loss_dtype": "float32",
+    "candidate_forward_inference_mode_forbidden": true,
+    "candidate_forward_no_grad_forbidden": true,
+    "candidate_pre_loss_numpy_conversion_forbidden": true,
+    "candidate_pre_loss_cpu_detachment_forbidden": true,
+    "candidate_pre_loss_detach_forbidden": true,
+    "existing_FrozenTinyLLaVAConnector_apply_inference_contract_unchanged": true,
+    "separate_differentiable_training_boundary_required": true,
+    "target_connector_output_reuse": "allowed_only_after_frozen_identity_and_image_order_verification"
+  },
+  "gradient_training": {
+    "fit_partition": "train",
+    "optimizer": "AdamW",
+    "learning_rate": 3e-5,
+    "betas": [0.9, 0.999],
+    "eps": 1e-8,
+    "weight_decay": 0.0,
+    "scheduler": null,
+    "gradient_clip_global_norm": 1.0,
+    "batch_unit": "image",
+    "batch_size_images": 8,
+    "max_epochs": 8,
+    "early_stopping": false,
+    "shuffle": true,
+    "seed": 43,
+    "validation_epochs": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    "learning_rate_search": false,
+    "optimizer_search": false
+  },
+  "validation_selection": {
+    "partition": "validation",
+    "checkpoint_selection_independent_per_source_and_condition": true,
+    "checkpoint_epochs": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    "PATCH_ONLY_CONTROL_checkpoint": {"metric": "L_patch", "direction": "lowest", "exact_tie": "earliest_epoch"},
+    "connector_aware_checkpoint": {"metric": "L_total", "lambda": "candidate_frozen_connector_loss_weight", "direction": "lowest", "exact_tie": "earliest_epoch"},
+    "OLS_REFERENCE_checkpoint": "accepted_closed_form_no_optimizer",
+    "connector_aware_lambda_selection_independent_per_source": true,
+    "lambda_hierarchy": [
+      {"priority": 1, "metric": "same_image_recall_at_1", "direction": "highest"},
+      {"priority": 2, "metric": "same_image_recall_at_5", "direction": "highest"},
+      {"priority": 3, "metric": "connector_cosine", "direction": "highest"},
+      {"priority": 4, "metric": "connector_loss_weight", "direction": "smallest"}
+    ],
+    "recorded_nonselector_metrics": ["patch_cosine", "patch_nmse", "patch_r2", "connector_nmse", "selected_epoch", "validation_losses"],
+    "mandatory_controls": ["OLS_REFERENCE", "PATCH_ONLY_CONTROL"],
+    "performance_threshold_for_software_pass": null,
+    "validation_llm_generation_authorized": false
+  },
+  "test_and_generation_policy": {
+    "prior_test_exposed_for_post_T002E_method_development": true,
+    "prior_T002E_test_role": "historical_comparison_only_not_selector",
+    "test_access_authorized": false,
+    "existing_test_reuse_for_new_adapter_authorized": false,
+    "test_access_counter_required": 0,
+    "future_confirmatory_task_requires_untouched_holdout_policy": true,
+    "generation_scheduled": false,
+    "train_validation_generation_authorized": false,
+    "test_generation_authorized": false
+  },
+  "mandatory_future_implementation_gates": {
+    "zero_step_affine_output": {"reference": "accepted_FULL_LINEAR", "rtol": 1e-5, "atol": 1e-5},
+    "zero_step_differentiable_connector_output": {"reference": "existing_frozen_connector_inference_path", "rtol": 0.002, "atol": 0.002},
+    "synthetic_connector_loss_only_backward": "finite_nonzero_adapter_gradient",
+    "one_optimizer_step": "adapter_parameters_change_all_frozen_parameters_and_buffers_exactly_unchanged",
+    "patch_only_connector_loss_weight": 0.0,
+    "connector_aware_weight_grid_excludes_zero": true,
+    "save_reload_output": {"reference": "selected_adapter_output", "rtol": 1e-5, "atol": 1e-5},
+    "fail_closed_identities": ["source_image_ids", "target_image_ids", "image_order", "shape", "dtype", "split", "checkpoint", "finite_values"],
+    "test_access_counter": 0,
+    "train_validation_generation_calls": 0
+  },
+  "runtime_bindings": {
+    "source_feature_bank_paths_and_hashes": "OPEN_PENDING_RUNTIME_IDENTITY_BINDING",
+    "target_feature_bank_path_and_hash": "OPEN_PENDING_RUNTIME_IDENTITY_BINDING",
+    "accepted_full_linear_artifact_paths_and_hashes": "OPEN_PENDING_RUNTIME_IDENTITY_BINDING",
+    "fail_closed_before_runtime_on_unbound_or_mismatched_identity": true
+  }
+}
