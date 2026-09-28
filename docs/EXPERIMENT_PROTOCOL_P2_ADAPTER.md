@@ -124,7 +124,8 @@ adapted generations over 100 held-out images. The hash-verified generation rows
 show the native vision/connector path and adapted injection/connector
 path were called at their expected boundaries. This records software/runtime
 execution evidence separately from the bounded scientific interpretation;
-independent acceptance remains pending.
+the T002E result record was independently accepted through T002F review and
+T002G state closure.
 
 ## 10. Remaining OPEN configuration fields
 

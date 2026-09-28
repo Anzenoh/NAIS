@@ -2,7 +2,8 @@
 
 - Status date: 2026-09-28
 - Current phase: `Phase 2 - query-conditioned encoder-to-VLM adapter compatibility`
-- Documentation state: `VEA-P2-T002F` result record, `REVIEW_PENDING`
+- Documentation state: `VEA-P2-T002F` independently accepted; state closed by
+  `VEA-P2-T002G`
 - First linear experiment configuration: frozen by `VEA-P2-T002A` at
   `configs/vlm_compat/p2_query_adapter_linear_v1.json`
 - Source of truth: this repository and its tracked contracts
@@ -25,9 +26,10 @@
 
 ## Next required action
 
-Submit the pushed `VEA-P2-T002F` evidence for independent review. The T002F
-delivery is `REVIEW_PENDING`; canonical integration merge is `UNVERIFIED` and
-historical Codex test counts are `UNRECOVERED`.
+Design and approve the next bounded Phase 2 experiment using Train/Validation
+without Test access. This state closure does not select or start that
+experiment. Canonical integration merge remains `UNVERIFIED`, and historical
+Codex test counts remain `UNRECOVERED`.
 
 ## T002E real-Test result recorded by T002F
 
@@ -38,10 +40,11 @@ historical Codex test counts are `UNRECOVERED`.
 - The hash-verified T002E result and generation records report 100 Test images,
   100 native and 800 adapted successful generations. Each image has all nine
   configurations; adapted rows agree with the result JSON.
-- This establishes the recorded software/runtime execution boundary, subject
-  to independent review. Scientifically, Full Linear substantially improves
-  on Calibration and Orthogonal Procrustes across the reported alignment and
-  generation measures; selected Ridge is practically tied with Full Linear.
+- The T002F record of this software/runtime execution boundary received an
+  independent `PASS`, recorded by T002G. Scientifically, Full Linear
+  substantially improves on Calibration and Orthogonal Procrustes across the
+  reported alignment and generation measures; selected Ridge is practically
+  tied with Full Linear.
   Linear alignment recovers substantial but incomplete TinyLLaVA functional
   compatibility. Exact matches to native generations remain low.
 - Original Apple artifact paths are not recovered here. Current validator
