@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol
@@ -104,7 +105,28 @@ def _connector_clean(connector: ConnectorOnly) -> None:
         _fail("vision calls must remain zero")
 
 
+def canonical_real_device(value: str) -> str:
+    """Accept only exact MPS or explicit indexed CUDA runtime identities."""
+    if not isinstance(value, str):
+        _fail("real device must be a string")
+    if value == "mps":
+        return value
+    if not re.fullmatch(r"cuda:[0-9]+", value):
+        _fail("real CUDA device must use an explicit nonnegative index such as cuda:0")
+    try:
+        parsed = torch.device(value)
+    except (RuntimeError, TypeError) as error:
+        raise ValidationError("real CUDA device syntax is invalid") from error
+    if parsed.type != "cuda" or parsed.index is None or parsed.index < 0 or str(parsed) != value:
+        _fail("real CUDA device must preserve one exact explicit index")
+    return str(parsed)
+
+
 def _check_connector(connector: ConnectorOnly, device: str, fake: bool) -> core.FrozenDifferentiableConnector:
+    if not fake:
+        device = canonical_real_device(device)
+    elif device != "cpu":
+        _fail("fake connector-aware execution requires device cpu")
     if not isinstance(device, str) or not device or connector.device != device or connector.dtype != torch.float16:
         _fail("connector device or float16 contract mismatch")
     if not fake and device == "cpu":
@@ -277,6 +299,8 @@ def run_validation(
     output_root: str | Path, device: str, fake: bool = False,
 ) -> dict[str, Any]:
     """Run exactly the frozen 0..8 Train/Validation budget and publish result last."""
+    if not fake:
+        device = canonical_real_device(device)
     core.validate_config(config)
     if _sha_bytes(_json_bytes(binding)) != CANONICAL_BINDING_SHA256:
         _fail("T003C binding config in memory differs from accepted bytes")

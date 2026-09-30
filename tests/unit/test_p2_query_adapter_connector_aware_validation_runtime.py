@@ -18,6 +18,18 @@ from vision_encoder_alignment.vlm_compat import query_adapter_connector_aware_va
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_explicit_cuda_device_canonicalization_is_index_exact_and_cpu_only() -> None:
+    assert torch.device("cuda") != torch.device("cuda:0")
+    assert torch.device("cuda").index is None
+    assert torch.device("cuda:0").index == 0
+    assert runtime.canonical_real_device("cuda:0") == "cuda:0"
+    assert runtime.canonical_real_device("cuda:12") == "cuda:12"
+    assert runtime.canonical_real_device("mps") == "mps"
+    for value in ("cuda", "cuda:-1", "cuda:x", "cuda:00", "cpu", "cuda:0 "):
+        with pytest.raises(runtime.ValidationError):
+            runtime.canonical_real_device(value)
+
+
 @pytest.fixture(scope="module")
 def completed(tmp_path_factory: pytest.TempPathFactory):
     output = tmp_path_factory.mktemp("t003d_completed") / "run"
@@ -219,7 +231,7 @@ def test_real_mode_rejects_synthetic_fixture_without_gpu(tmp_path: Path, monkeyp
     with pytest.raises(runtime.ValidationError, match="production inputs"):
         runtime.run_validation(config=config, binding=binding, anchor=anchor,
                                inputs=inputs, inference_connector=inference,
-                               output_root=tmp_path / "real", device="cpu", fake=False)
+                               output_root=tmp_path / "real", device="mps", fake=False)
 
 
 def test_selected_artifact_rejects_wrong_runtime_identity(completed) -> None:

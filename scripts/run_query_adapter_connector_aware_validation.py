@@ -109,14 +109,13 @@ def main(argv: list[str] | None = None) -> int:
                 inference_connector=inference, output_root=args.fake_smoke, device="cpu", fake=True,
             )
         else:
+            device = runtime.canonical_real_device(args.device)
             t001d_root = _absolute_directory(args.t001d_run_root, "T001D_RUN_ROOT")
             t002d_root = _absolute_directory(args.t002d_validation_root, "T002D_VALIDATION_ROOT")
             cache_root = _absolute_directory(args.cache_root, "cache root")
             if args.output_root is None:
                 raise runtime.ValidationError("real mode requires --output-root")
             _output_available(args.output_root)
-            if args.device not in ("mps", "cuda"):
-                raise runtime.ValidationError("real mode requires an explicit mps or cuda device")
             # Identity, bank and Full Linear checks complete before model load.
             inputs = binding_module.preflight_runtime(ROOT, t001d_root, t002d_root)
             if inputs.provenance.get("binding") != binding:
@@ -124,11 +123,11 @@ def main(argv: list[str] | None = None) -> int:
             inference = connector_module.load_frozen_tinyllava_connector(
                 config_path=ROOT / runtime.ANCHOR_PATH,
                 model_id=anchor["model_id"], revision=anchor["revision"],
-                cache_root=cache_root, device=args.device, dtype_name="float16",
+                cache_root=cache_root, device=device, dtype_name="float16",
             )
             result = runtime.run_validation(
                 config=config, binding=binding, anchor=anchor, inputs=inputs,
-                inference_connector=inference, output_root=args.output_root, device=args.device,
+                inference_connector=inference, output_root=args.output_root, device=device,
             )
     except (runtime.ValidationError, binding_module.RuntimeBindingError,
             core.ConnectorAwareLinearError, connector_module.FrozenConnectorError,

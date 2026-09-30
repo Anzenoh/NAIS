@@ -51,6 +51,53 @@ def test_real_preflight_precedes_model_load(tmp_path: Path, monkeypatch, capsys)
     assert "synthetic stop" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("device", ["cuda", "cuda:-1", "cuda:x", "cuda:00", "cpu", "unexpected"])
+def test_real_cli_rejects_ambiguous_or_malformed_device_before_preflight_and_model(
+    tmp_path: Path, monkeypatch, capsys, device: str,
+) -> None:
+    for name in ("t001d", "t002d", "cache"):
+        (tmp_path / name).mkdir()
+    calls = []
+    monkeypatch.setattr(cli.binding_module, "preflight_runtime", lambda *args: calls.append("preflight"))
+    monkeypatch.setattr(cli.connector_module, "load_frozen_tinyllava_connector",
+                        lambda **kwargs: calls.append("model"))
+    assert cli.main([
+        "--t001d-run-root", str(tmp_path / "t001d"),
+        "--t002d-validation-root", str(tmp_path / "t002d"),
+        "--cache-root", str(tmp_path / "cache"),
+        "--output-root", str(tmp_path / "out"), "--device", device,
+    ]) == 2
+    assert calls == []
+    assert "device" in capsys.readouterr().err
+
+
+def test_real_cli_forwards_exact_indexed_cuda_device(tmp_path: Path, monkeypatch, capsys) -> None:
+    for name in ("t001d", "t002d", "cache"):
+        (tmp_path / name).mkdir()
+    calls = []
+    class Inputs:
+        provenance = {}
+    def loader(**kwargs):
+        calls.append(kwargs["device"])
+        raise cli.connector_module.FrozenConnectorError("synthetic model stop")
+    monkeypatch.setattr(cli.connector_module, "load_frozen_tinyllava_connector", loader)
+    # The runtime checks that the preflight object repeats the accepted binding.
+    original_inputs = Inputs()
+    def accepted_preflight(*args):
+        original_inputs.provenance = {"binding": cli.runtime.load_accepted_inputs(cli.ROOT)[1]}
+        calls.append("preflight")
+        return original_inputs
+    monkeypatch.setattr(cli.binding_module, "preflight_runtime", accepted_preflight)
+    assert cli.main([
+        "--t001d-run-root", str(tmp_path / "t001d"),
+        "--t002d-validation-root", str(tmp_path / "t002d"),
+        "--cache-root", str(tmp_path / "cache"),
+        "--output-root", str(tmp_path / "out"), "--device", "cuda:0",
+    ]) == 2
+    assert calls == ["preflight", "cuda:0"]
+    assert "synthetic model stop" in capsys.readouterr().err
+
+
 def test_fake_mode_never_loads_model_or_runtime_roots_and_repeats(tmp_path: Path, monkeypatch, capsys) -> None:
     def forbidden(*args, **kwargs):
         raise AssertionError("fake mode invoked a real boundary")
