@@ -1,0 +1,30 @@
+{
+  "schema_id": "vea.p2.connector_aware_validation_generation.v1",
+  "experiment_id": "vea.p2.query_adapter_connector_aware_linear.v1",
+  "study_role": "development_validation_only_not_confirmatory_test",
+  "t003a_config_sha256": "4684a1ae43a124725df93d15c2287a30aa31ae38f6c58bd2f05b83e749f8494b",
+  "t003c_binding_sha256": "f0336604f4d4f37350d2745d8b54edeb1cc19f75fe27d5475609d81402946614",
+  "t003e": {
+    "result_sha256": "2147b41ec525f387c0cc8d434d6b3cd748ed224ef39053fc9c6a9e7372963a10",
+    "runtime_identity_sha256": "6e0e274a47813101e560d8f8dc1dbf40ad416b89abd7e6f6d1688646f4b466ca",
+    "device": "cuda:0",
+    "required_zero_counts": {"test_access_count": 0, "test_metric_count": 0, "generation_calls": 0, "vision_calls": 0}
+  },
+  "validation": {"image_count": 100, "split": "validation", "test_access_authorized": false},
+  "generation": {
+    "prompt": "What is shown in this image? Answer briefly.",
+    "do_sample": false,
+    "num_beams": 1,
+    "max_new_tokens": 32,
+    "native_target_reference": true,
+    "fit_authorized": false,
+    "selection_authorized": false
+  },
+  "lanes": {
+    "SIGLIP2/OLS_REFERENCE": {"source": "SIGLIP2", "lane": "OLS_REFERENCE", "artifact_condition": "PATCH_ONLY_CONTROL", "selected_epoch": 0, "affine_sha256": "a103505426fbb890a891ffed80c7b022b2fcddc24d69192d025c6967438b5d0f"},
+    "SIGLIP2/CONNECTOR_AWARE_SELECTED": {"source": "SIGLIP2", "lane": "CONNECTOR_AWARE_SELECTED", "artifact_condition": "PATCH_CONNECTOR_4P0", "selected_epoch": 7, "affine_sha256": "c316f550b551bd8b35e82341366ae156bb947e1e493f27b212b7f6d56e0a17cf"},
+    "DINOV3/OLS_REFERENCE": {"source": "DINOV3", "lane": "OLS_REFERENCE", "artifact_condition": "PATCH_ONLY_CONTROL", "selected_epoch": 0, "affine_sha256": "918872025697964e4126675a107f5db00b4efbed222c73b6c30ec40c9bf37e3f"},
+    "DINOV3/CONNECTOR_AWARE_SELECTED": {"source": "DINOV3", "lane": "CONNECTOR_AWARE_SELECTED", "artifact_condition": "PATCH_CONNECTOR_0P25", "selected_epoch": 0, "affine_sha256": "918872025697964e4126675a107f5db00b4efbed222c73b6c30ec40c9bf37e3f"}
+  },
+  "generation_plan": {"native": 100, "adapted": 400, "total": 500}
+}
