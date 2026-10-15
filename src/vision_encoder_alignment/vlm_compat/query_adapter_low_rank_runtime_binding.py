@@ -2,14 +2,18 @@
 
 ``bind_low_rank_runtime`` takes three explicit existing absolute directories. It
 does not fit or select an adapter. Test-only units are hashed as opaque artifact
-bytes for lineage, never opened as NumPy payloads. A unit mixing Train and Test
-is refused before its patch array can be decompressed.
+bytes for lineage, never opened as NumPy payloads. Mixed units use exact byte
+offsets in the accepted ZIP_STORED np.savez layout to read Train patch rows only.
 """
 
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import struct
+import zipfile
+import zlib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator, Mapping
@@ -113,6 +117,160 @@ def _array(archive: Any, key: str, shape: tuple[int, ...], label: str) -> np.nda
 
 
 @dataclass(frozen=True)
+class _StoredMember:
+    data_offset: int
+    size: int
+    crc32: int
+
+
+def _read_exact_at(stream: Any, offset: int, size: int) -> bytes:
+    """One bounded positional read; tests observe these ranges for Test exclusion."""
+    if offset < 0 or size < 0:
+        _fail("BLOCKED_NPZ_LAYOUT", "negative NPZ byte offset or length")
+    stream.seek(offset)
+    value = stream.read(size)
+    if len(value) != size:
+        _fail("BLOCKED_NPZ_LAYOUT", "truncated NPZ member")
+    return value
+
+
+def _stored_members(stream: Any, names: frozenset[str]) -> dict[str, _StoredMember]:
+    """Parse only the strict, unencrypted ZIP_STORED layout emitted by np.savez."""
+    stream.seek(0, 2)
+    total = stream.tell()
+    if total < 22:
+        _fail("BLOCKED_NPZ_LAYOUT", "NPZ has no end-of-central-directory record")
+    end = struct.unpack("<IHHHHIIH", _read_exact_at(stream, total - 22, 22))
+    signature, disk, central_disk, disk_count, entry_count, central_size, central_offset, comment_size = end
+    if (signature != 0x06054B50 or disk != 0 or central_disk != 0 or comment_size != 0
+            or disk_count != entry_count or entry_count != len(names)
+            or central_size > 4096 or central_offset + central_size != total - 22):
+        _fail("BLOCKED_NPZ_LAYOUT", "NPZ central directory differs from supported np.savez layout")
+    central = _read_exact_at(stream, central_offset, central_size)
+    cursor = 0
+    entries: dict[str, tuple[int, int, int]] = {}
+    for _ in range(entry_count):
+        if cursor + 46 > len(central):
+            _fail("BLOCKED_NPZ_LAYOUT", "truncated NPZ central entry")
+        fields = struct.unpack_from("<IHHHHHHIIIHHHHHII", central, cursor)
+        (magic, _made, needed, flags, method, _time, _date, crc, packed, size,
+         name_len, extra_len, comment_len, disk_start, _internal, _external, local_offset) = fields
+        cursor += 46
+        if (magic != 0x02014B50 or needed != 45 or flags != 0 or method != zipfile.ZIP_STORED
+                or packed != size or size == 0xFFFFFFFF or disk_start != 0
+                or extra_len != 0 or comment_len != 0 or not 0 < name_len <= 64
+                or cursor + name_len > len(central)):
+            _fail("BLOCKED_NPZ_LAYOUT", "compressed, encrypted, or unsupported NPZ central entry")
+        try:
+            name = central[cursor:cursor + name_len].decode("ascii")
+        except UnicodeDecodeError as error:
+            raise LowRankRuntimeBindingError("BLOCKED_NPZ_LAYOUT", "non-ASCII NPZ member name") from error
+        cursor += name_len
+        if name not in names or name in entries:
+            _fail("BLOCKED_NPZ_LAYOUT", "NPZ members differ from exact allowlist")
+        entries[name] = (local_offset, size, crc)
+    if cursor != len(central) or set(entries) != names:
+        _fail("BLOCKED_NPZ_LAYOUT", "NPZ members or central directory length differ")
+    members: dict[str, _StoredMember] = {}
+    previous_end = 0
+    for name, (offset, size, crc) in sorted(entries.items(), key=lambda item: item[1][0]):
+        if offset != previous_end or offset + 30 > central_offset:
+            _fail("BLOCKED_NPZ_LAYOUT", "NPZ member offsets overlap or contain gaps")
+        local = struct.unpack("<IHHHHHIIIHH", _read_exact_at(stream, offset, 30))
+        (magic, needed, flags, method, _time, _date, local_crc, packed, unpacked,
+         name_len, extra_len) = local
+        if (magic != 0x04034B50 or needed != 45 or flags != 0 or method != zipfile.ZIP_STORED
+                or local_crc != crc or packed != 0xFFFFFFFF or unpacked != 0xFFFFFFFF
+                or name_len != len(name) or extra_len != 20):
+            _fail("BLOCKED_NPZ_LAYOUT", "NPZ local header differs from np.savez ZIP64 stored layout")
+        if _read_exact_at(stream, offset + 30, name_len) != name.encode("ascii"):
+            _fail("BLOCKED_NPZ_LAYOUT", "NPZ local and central member names differ")
+        extra = _read_exact_at(stream, offset + 30 + name_len, 20)
+        if struct.unpack("<HHQQ", extra) != (1, 16, size, size):
+            _fail("BLOCKED_NPZ_LAYOUT", "NPZ ZIP64 size metadata differs")
+        data_offset = offset + 30 + name_len + 20
+        previous_end = data_offset + size
+        if previous_end > central_offset:
+            _fail("BLOCKED_NPZ_LAYOUT", "NPZ member extends into central directory")
+        members[name] = _StoredMember(data_offset, size, crc)
+    if previous_end != central_offset:
+        _fail("BLOCKED_NPZ_LAYOUT", "NPZ has trailing unbound member bytes")
+    return members
+
+
+def _metadata_array(stream: Any, member: _StoredMember, maximum: int, label: str) -> np.ndarray:
+    if member.size > maximum:
+        _fail("BLOCKED_NPZ_LAYOUT", f"{label} metadata member exceeds size bound")
+    payload = _read_exact_at(stream, member.data_offset, member.size)
+    if zlib.crc32(payload) != member.crc32:
+        _fail("BLOCKED_NPZ_LAYOUT", f"{label} metadata CRC differs")
+    try:
+        value = np.lib.format.read_array(io.BytesIO(payload), allow_pickle=False, max_header_size=10000)
+    except (OSError, ValueError, EOFError) as error:
+        raise LowRankRuntimeBindingError("BLOCKED_NPZ_LAYOUT", f"{label} metadata NPY is invalid") from error
+    if not isinstance(value, np.ndarray):
+        _fail("BLOCKED_NPZ_LAYOUT", f"{label} metadata is not an NPY array")
+    return value
+
+
+def _patch_data_offset(stream: Any, member: _StoredMember, shape: tuple[int, int, int]) -> int:
+    prefix = _read_exact_at(stream, member.data_offset, 8)
+    if prefix[:6] != b"\x93NUMPY" or tuple(prefix[6:]) not in ((1, 0), (2, 0)):
+        _fail("BLOCKED_NPZ_LAYOUT", "patch NPY magic or version differs")
+    length_size = 2 if prefix[6] == 1 else 4
+    length_raw = _read_exact_at(stream, member.data_offset + 8, length_size)
+    header_size = int.from_bytes(length_raw, "little")
+    if header_size > 10000 or 8 + length_size + header_size > member.size:
+        _fail("BLOCKED_NPZ_LAYOUT", "patch NPY header length is invalid")
+    header = _read_exact_at(stream, member.data_offset + 8 + length_size, header_size)
+    try:
+        reader = np.lib.format.read_array_header_1_0 if prefix[6] == 1 else np.lib.format.read_array_header_2_0
+        observed_shape, fortran, dtype = reader(io.BytesIO(length_raw + header), max_header_size=10000)
+    except (ValueError, SyntaxError, TypeError, EOFError) as error:
+        raise LowRankRuntimeBindingError("BLOCKED_NPZ_LAYOUT", "patch NPY header is invalid") from error
+    if observed_shape != shape or fortran or dtype.str != "<f4":
+        _fail("BLOCKED_SHAPE", "patch NPY must be C-contiguous little-endian float32 with approved shape")
+    data_offset = member.data_offset + 8 + length_size + header_size
+    if data_offset + int(np.prod(shape)) * 4 != member.data_offset + member.size:
+        _fail("BLOCKED_NPZ_LAYOUT", "patch NPY data size differs from approved shape")
+    return data_offset
+
+
+def _select_train_rows(unit: _Unit, shape: tuple[int, int]) -> list[tuple[str, np.ndarray]]:
+    """Read metadata and only Train patch ranges; never open connector/global values."""
+    names = (preflight.TARGET_FIELDS if unit.bank == "TARGET_CLIP" else preflight.SOURCE_FIELDS)
+    allowed = frozenset(f"{name}.npy" for name in names)
+    count = len(unit.image_ids)
+    try:
+        with unit.path.open("rb") as stream:
+            members = _stored_members(stream, allowed)
+            ids = _metadata_array(stream, members["image_ids.npy"], count * 384 + 4096, "image_ids")
+            if (ids.shape != (count,) or ids.dtype != np.dtype("U96")
+                    or tuple(map(str, ids.tolist())) != unit.image_ids):
+                _fail("BLOCKED_IMAGE_ORDER", f"{unit.bank} unit image IDs differ from plan")
+            plan_id = _metadata_array(stream, members["plan_id.npy"], 4096, "plan_id")
+            if plan_id.shape != () or plan_id.dtype != np.dtype("U64") or str(plan_id.item()) != unit.plan_id:
+                _fail("BLOCKED_PLAN", f"{unit.bank} persisted plan identity differs")
+            patches = members["patches.npy"]
+            data_offset = _patch_data_offset(stream, patches, (count, *shape))
+            row_bytes = shape[0] * shape[1] * 4
+            selected: list[tuple[str, np.ndarray]] = []
+            for index, (image_id, split) in enumerate(zip(unit.image_ids, unit.splits, strict=True)):
+                if split != "train":
+                    continue
+                raw = _read_exact_at(stream, data_offset + index * row_bytes, row_bytes)
+                value = np.frombuffer(raw, dtype="<f4").copy().reshape(shape)
+                if not np.isfinite(value).all():
+                    _fail("BLOCKED_SHAPE", f"{unit.bank} Train patch row contains non-finite values")
+                selected.append((image_id, value))
+            return selected
+    except LowRankRuntimeBindingError:
+        raise
+    except (OSError, ValueError, struct.error) as error:
+        raise LowRankRuntimeBindingError("BLOCKED_NPZ_LAYOUT", f"{unit.bank} stored NPZ cannot be read safely") from error
+
+
+@dataclass(frozen=True)
 class AcceptedOLS:
     weights: np.ndarray
     source_mean: np.ndarray
@@ -196,30 +354,12 @@ class TrainChunkFactory:
         for unit in units:
             if "train" not in unit.splits:
                 continue
-            if "test" in unit.splits:
-                _fail("BLOCKED_TEST_GUARD", f"{unit.bank} unit mixes Train and Test; patch payload cannot be isolated")
             if _sha_file(unit.path) != unit.sha256:
                 _fail("BLOCKED_ARTIFACT_HASH", f"{unit.bank} Train unit changed after binding")
-            try:
-                with np.load(unit.path, allow_pickle=False) as archive:
-                    if set(archive.files) != (preflight.TARGET_FIELDS if unit.bank == "TARGET_CLIP" else preflight.SOURCE_FIELDS):
-                        _fail("BLOCKED_SHAPE", f"{unit.bank} unit fields differ")
-                    raw_ids = archive["image_ids"]
-                    if raw_ids.ndim != 1 or raw_ids.dtype.kind not in "US" or tuple(map(str, raw_ids.tolist())) != unit.image_ids:
-                        _fail("BLOCKED_IMAGE_ORDER", f"{unit.bank} unit image IDs differ from plan")
-                    raw_plan = archive["plan_id"]
-                    if raw_plan.shape != () or raw_plan.dtype.kind not in "US" or str(raw_plan.item()) != unit.plan_id:
-                        _fail("BLOCKED_PLAN", f"{unit.bank} persisted plan identity differs")
-                    patches = _array(archive, "patches", (len(unit.image_ids), *self._patch_shape), unit.bank)
-            except LowRankRuntimeBindingError:
-                raise
-            except (OSError, ValueError, EOFError, KeyError) as error:
-                raise LowRankRuntimeBindingError("BLOCKED_SHAPE", f"{unit.bank} Train unit cannot be safely read") from error
+            selected = _select_train_rows(unit, self._patch_shape)
             if _sha_file(unit.path) != unit.sha256:
                 _fail("BLOCKED_ARTIFACT_HASH", f"{unit.bank} Train unit changed during payload read")
-            for index, (image_id, split) in enumerate(zip(unit.image_ids, unit.splits, strict=True)):
-                if split == "train":
-                    yield image_id, patches[index].copy()
+            yield from selected
 
 
 @dataclass(frozen=True)
@@ -361,8 +501,6 @@ def _banks(run_root: Path, plan: Mapping[str, Any], plan_id: str, linear: Mappin
             if any(image_id not in split_by_id for image_id in unit_ids):
                 _fail("BLOCKED_SPLIT", f"{bank} unit contains an unapproved image ID")
             splits = tuple(split_by_id[image_id] for image_id in unit_ids)
-            if "train" in splits and "test" in splits:
-                _fail("BLOCKED_TEST_GUARD", f"{bank} unit mixes Train and Test")
             n = len(unit_ids)
             if "train" in splits and n * patch_shape[0] > core.MAX_CHUNK_ROWS:
                 _fail("BLOCKED_CHUNK_CAP", f"{bank} Train-bearing NPZ unit exceeds 4096 patch rows")

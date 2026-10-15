@@ -132,6 +132,21 @@ class Fixture:
         }
         self.fixture["expected"]["banks"][bank] = hashlib.sha256(t001d.canonical_json_bytes(material)).hexdigest()
 
+    def materialize_test_only_unit_for_mixed_fixture(self, bank: str) -> None:
+        unit = next(unit for unit in self.plan["expected_units"]
+                    if unit["encoder"] == bank and unit["chunk_index"] == 3)
+        ids = unit["image_ids"]
+        arrays = {
+            "image_ids": np.asarray(ids, dtype="U96"),
+            "patches": np.full((len(ids), *PATCH_SHAPE), 3 + binding.BANK_ORDER.index(bank), dtype=np.float32),
+            "globals": np.zeros((len(ids), 768), dtype=np.float32),
+            "plan_id": np.asarray(self.plan_id, dtype="U64"),
+        }
+        if bank == "TARGET_CLIP":
+            arrays["connectors"] = np.zeros((1,), dtype=np.float32)
+        np.savez(self.unit_paths[(bank, 3)], **arrays)
+        self.rehash_bank(bank)
+
 
 @pytest.fixture
 def fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Fixture:
@@ -258,12 +273,28 @@ def test_plan_duplicate_misorder_split_and_mixed_test_fail(fake: Fixture) -> Non
     blocked("BLOCKED_SPLIT", fake.bind)
 
 
-def test_mixed_train_test_unit_refused_before_np_load(fake: Fixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_mixed_train_test_unit_selects_train_without_numpy_open(fake: Fixture, monkeypatch: pytest.MonkeyPatch) -> None:
     # Keep split counts 800/100/100 while moving one Test image into a Train unit.
     rows = fake.plan["manifest_rows"]
     rows[0]["split"], rows[900]["split"] = rows[900]["split"], rows[0]["split"]
-    monkeypatch.setattr(binding.np, "load", lambda *args, **kwargs: pytest.fail("payload opened before Test guard"))
-    blocked("BLOCKED_TEST_GUARD", fake.bind)
+    for bank in binding.BANK_ORDER:
+        fake.materialize_test_only_unit_for_mixed_fixture(bank)
+    real_load = binding.np.load
+
+    def guard(path, *args, **kwargs):
+        assert Path(path) not in set(fake.unit_paths.values())
+        return real_load(path, *args, **kwargs)
+
+    monkeypatch.setattr(binding.np, "load", guard)
+    bound = fake.bind()
+    expected = tuple(row["image_id"] for row in rows if row["split"] == "train")
+    for source in binding.SOURCE_ORDER:
+        first = list(bound.train_factory(source)())
+        second = list(bound.train_factory(source)())
+        ids = tuple(image_id for chunk in first for image_id in chunk.source_image_ids)
+        assert ids == expected
+        assert first[0].source_image_ids == second[0].source_image_ids
+        assert all(chunk.source.shape[0] * chunk.source.shape[1] <= 4096 for chunk in first)
 
 
 @pytest.mark.parametrize("kind", ["reverse", "duplicate"])
