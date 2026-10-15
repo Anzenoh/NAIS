@@ -89,3 +89,20 @@ the T002E result recorded by T002F. Its generation records confirm 100 native
 and 800 adapted successful rows. Ridge lambda candidates receive no Validation
 generation. Future experiments require their own separately approved exact
 configuration.
+
+## 8. T003E/T003G Validation interpretation
+
+T003E's SIGLIP2 connector-aware selection improved Validation R@1 and connector
+cosine relative to OLS, but reduced patch cosine. T003G's user-supplied
+Validation-only generation output reports SIGLIP2 OLS Token F1 `0.577915913`
+and native exact match `1/100`, versus connector-aware Token F1 `0.569035705`
+and exact match `0/100`. The F1 delta is `-0.008880208`, with text/token
+equality `18/100`. DINOV3 OLS and connector-aware each report Token F1
+`0.594797657`, exact match `1/100`, and text/token equality `100/100`, with the
+same selected affine identity. The tested same-capacity connector-aware
+objective is `NOT_PROMOTED` over OLS on this Validation evidence. This does
+not rule out other connector-loss methods. The T003G hashes and structural
+`PASS` were supplied in execution output; T003H did not independently review
+raw per-image rows. T002E Test and T003G Validation are different partitions,
+so their absolute metrics cannot be treated as a same-image comparison or used
+for future method selection. No new Test access is authorized.

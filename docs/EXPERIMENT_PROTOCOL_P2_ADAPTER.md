@@ -127,6 +127,29 @@ execution evidence separately from the bounded scientific interpretation;
 the T002E result record was independently accepted through T002F review and
 T002G state closure.
 
+## 9a. Connector-aware Validation study disposition
+
+T003E reported real Apple Train/Validation fitting for the same-capacity
+connector-aware affine objective, with Test access/metrics/generation/vision
+`0/0/0/0`. The SIGLIP2 selected `lambda=4`, epoch 7 improved Validation R@1
+`0.89 -> 0.92` and connector cosine
+`0.48697282446433066 -> 0.5056841280687281` relative to OLS, while patch
+cosine changed `0.4628383531145029 -> 0.449191858608662`. The DINOV3 selected
+`lambda=0.25`, epoch 0 retained the OLS/patch-only affine identity.
+
+T003F independently reviewed the Validation-generation implementation at
+`0b3b7a2ee135e1e85cf459248066f5b53a313ef9` without real generation in
+that task. User-supplied T003G execution output reports 100 Validation images,
+100 native plus 400 adapted generations, Test access/metrics `0/0`, and a
+structural `PASS`. SIGLIP2 connector-aware Token F1 and native exact match
+declined relative to OLS; DINOV3 generation was identical. The tested
+same-capacity objective is `NOT_PROMOTED` over OLS; this is not a universal
+conclusion about connector loss. T003H did not independently inspect or rehash
+the raw T003G files. T002E Test and T003G Validation metrics are from different
+partitions and must not be compared as same-image results. Historical Test
+results are not used for future method selection, and no new Test access is
+authorized.
+
 ## 10. Remaining OPEN configuration fields
 
 The first linear experiment does not assign future complexity settings. These
@@ -138,6 +161,12 @@ remain `OPEN`:
 - hard parameter and latency budgets;
 - spatial adapter architecture;
 - semantic generation metric.
+
+A later approved low-rank linear Train/Validation design must first freeze the
+rank grid, fitting/parameterization, parameter and latency budgets, Validation
+selection, frozen-generation evaluation, scientific acceptance criteria, and
+untouched-Test policy. T003H assigns none of these values and starts no
+low-rank, MLP, or spatial experiment.
 
 Original Apple artifact paths are not recovered in the T002F evidence record.
 Current validator evidence paths do not replace those historical paths.

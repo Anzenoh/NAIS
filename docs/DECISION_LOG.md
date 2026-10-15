@@ -27,6 +27,12 @@
 | VEA-D021 | Reuse the exact T001D deterministic generation settings and skip Validation generation during Ridge search | Makes all eight finalized Test configurations comparable without generation for every lambda candidate | Accepted |
 | VEA-D022 | Use float64 fitting/solves and similarity metrics with float32 stored adapter parameters and adapted features | Preserves numerical stability while retaining the validated injection storage boundary | Accepted |
 
+## Study disposition
+
+| ID | Decision | Rationale | Status |
+|---|---|---|---|
+| VEA-D023 | Do not promote the tested same-capacity connector-aware affine objective over OLS; plan a separately approved bounded low-rank linear Train/Validation design only | T003E SIGLIP2 Validation connector/R@1 proxies improved, but user-supplied T003G Validation generation reports lower Token F1 and native exact match; DINOV3 selected unchanged OLS initialization and identical generation. No Test-informed selection or new Test access follows | NOT_PROMOTED |
+
 ## Open decisions
 
 | ID | Question | Required before |
