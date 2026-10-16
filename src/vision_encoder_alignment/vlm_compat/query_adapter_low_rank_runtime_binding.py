@@ -442,11 +442,23 @@ def _ols(validation_root: Path, test: Mapping[str, Any], expected: Mapping[str, 
             _fail("BLOCKED_OLS_HASH", f"{source} Full Linear manifest or artifact SHA differs")
         try:
             with np.load(path, allow_pickle=False) as archive:
-                if set(archive.files) != {"runtime_identity", "weights", "source_mean", "target_mean"}:
+                fields = {"runtime_identity", "weights", "source_mean", "target_mean",
+                          "rank", "residual_sum_squares"}
+                names = archive.zip.namelist()
+                if (len(archive.files) != len(fields) or set(archive.files) != fields
+                        or len(names) != len(fields) or set(names) != {f"{field}.npy" for field in fields}):
                     _fail("BLOCKED_SHAPE", f"{source} Full Linear fields differ")
                 identity = archive["runtime_identity"]
                 if identity.shape != () or identity.dtype.kind not in "US" or str(identity.item()) != test["validation_runtime_identity_sha256"]:
                     _fail("BLOCKED_OLS_IDENTITY", f"{source} Full Linear persisted runtime identity differs")
+                rank = archive["rank"]
+                if rank.shape != () or rank.dtype.kind not in "iu" or not 0 <= int(rank.item()) <= 768:
+                    _fail("BLOCKED_SHAPE", f"{source} Full Linear rank must be an integer scalar in 0..768")
+                residuals = archive["residual_sum_squares"]
+                if (residuals.ndim != 1 or residuals.shape[0] not in (0, 768)
+                        or residuals.dtype != np.float32 or not np.isfinite(residuals).all()
+                        or (residuals.shape[0] == 768 and int(rank.item()) != 768)):
+                    _fail("BLOCKED_SHAPE", f"{source} Full Linear residuals differ from the producer contract")
                 output[source] = AcceptedOLS(
                     _array(archive, "weights", (768, 768), source),
                     _array(archive, "source_mean", (768,), source),

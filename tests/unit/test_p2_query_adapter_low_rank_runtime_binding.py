@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import warnings
+import zipfile
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 from vision_encoder_alignment.vlm_compat import query_adapter_bank_preflight as preflight
+from vision_encoder_alignment.vlm_compat import query_adapter_linear as linear
+from vision_encoder_alignment.vlm_compat import query_adapter_linear_validation_runtime as validation
 from vision_encoder_alignment.vlm_compat import query_adapter_low_rank_runtime_binding as binding
 from vision_encoder_alignment.vlm_compat import resumable_anchor_transport as t001d
 
@@ -88,9 +92,15 @@ class Fixture:
             relative = self.test["finalized_adapter_artifacts"][source]["FULL_LINEAR"]["relative_path"]
             path = self.validation / relative
             path.parent.mkdir(parents=True, exist_ok=True)
+            fit = linear.FullLinearFit(
+                weights=np.eye(768, dtype=np.float32),
+                source_mean=np.zeros(768, dtype=np.float32),
+                target_mean=np.ones(768, dtype=np.float32),
+                rank=768,
+                residual_sum_squares=np.zeros(768, dtype=np.float32),
+            )
             np.savez(path, runtime_identity=np.asarray(self.test["validation_runtime_identity_sha256"], dtype="U64"),
-                     weights=np.eye(768, dtype=np.float32), source_mean=np.zeros(768, dtype=np.float32),
-                     target_mean=np.ones(768, dtype=np.float32))
+                     **validation._fit_arrays(fit))
             self.ols_paths[source] = path
             ols_hashes[source] = hashlib.sha256(path.read_bytes()).hexdigest()
         self.result = {
@@ -146,6 +156,16 @@ class Fixture:
             arrays["connectors"] = np.zeros((1,), dtype=np.float32)
         np.savez(self.unit_paths[(bank, 3)], **arrays)
         self.rehash_bank(bank)
+
+    def rewrite_ols(self, source: str, arrays: dict[str, np.ndarray]) -> None:
+        path = self.ols_paths[source]
+        np.savez(path, **arrays)
+        sha = hashlib.sha256(path.read_bytes()).hexdigest()
+        relative = self.test["finalized_adapter_artifacts"][source]["FULL_LINEAR"]["relative_path"]
+        self.fixture["expected"]["ols"][source] = sha
+        self.result["fit_artifacts"][relative] = sha
+        self.write_result()
+        self.fixture["expected"]["result"] = hashlib.sha256((self.validation / "result.json").read_bytes()).hexdigest()
 
 
 @pytest.fixture
@@ -211,6 +231,113 @@ def test_tracked_sha_and_result_drift(fake: Fixture, monkeypatch: pytest.MonkeyP
 
 def test_ols_hash_payload_and_identity(fake: Fixture) -> None:
     fake.ols_paths["SIGLIP2"].write_bytes(b"corrupted")
+    blocked("BLOCKED_OLS_HASH", fake.bind)
+
+
+def test_historical_six_field_ols_schema_binds_both_sources_as_copies(fake: Fixture) -> None:
+    bound = fake.bind()
+    expected = {"runtime_identity", "weights", "source_mean", "target_mean", "rank", "residual_sum_squares"}
+    assert set(bound.ols) == set(binding.SOURCE_ORDER)
+    assert set(binding.AcceptedOLS.__dataclass_fields__) == {
+        "weights", "source_mean", "target_mean", "artifact_sha256"
+    }
+    for source in binding.SOURCE_ORDER:
+        with np.load(fake.ols_paths[source], allow_pickle=False) as archive:
+            assert set(archive.files) == expected
+            assert set(archive.zip.namelist()) == {f"{field}.npy" for field in expected}
+            assert archive["rank"].shape == () and int(archive["rank"].item()) == 768
+            assert archive["residual_sum_squares"].shape == (768,)
+            stored_weights = archive["weights"]
+            assert np.array_equal(bound.ols[source].weights, stored_weights)
+            assert np.array_equal(bound.ols[source].source_mean, archive["source_mean"])
+            assert np.array_equal(bound.ols[source].target_mean, archive["target_mean"])
+            stored_weights[0, 0] = -999
+            assert bound.ols[source].weights[0, 0] == 1
+
+
+@pytest.mark.parametrize("rank", [0, 767])
+def test_rank_deficient_empty_residuals_allowed(fake: Fixture, rank: int) -> None:
+    source = "DINOV3"
+    with np.load(fake.ols_paths[source], allow_pickle=False) as archive:
+        arrays = dict(archive)
+    arrays["rank"] = np.asarray(rank, dtype=np.int64)
+    arrays["residual_sum_squares"] = np.empty((0,), dtype=np.float32)
+    fake.rewrite_ols(source, arrays)
+    assert np.array_equal(fake.bind().ols[source].weights, arrays["weights"])
+
+
+@pytest.mark.parametrize("change", ["missing_rank", "missing_residuals", "extra", "unsafe_extra"])
+def test_ols_member_allowlist_fail_closed(fake: Fixture, change: str) -> None:
+    source = "SIGLIP2"
+    with np.load(fake.ols_paths[source], allow_pickle=False) as archive:
+        arrays = dict(archive)
+    if change == "missing_rank":
+        del arrays["rank"]
+    elif change == "missing_residuals":
+        del arrays["residual_sum_squares"]
+    else:
+        arrays["unexpected" if change == "extra" else "../unexpected"] = np.zeros(1, dtype=np.float32)
+    fake.rewrite_ols(source, arrays)
+    blocked("BLOCKED_SHAPE", fake.bind)
+
+
+def test_ols_duplicate_zip_member_rejected(fake: Fixture) -> None:
+    source = "SIGLIP2"
+    path = fake.ols_paths[source]
+    with zipfile.ZipFile(path) as archive:
+        duplicate = archive.read("rank.npy")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        with zipfile.ZipFile(path, "a") as archive:
+            archive.writestr("rank.npy", duplicate)
+    sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    relative = fake.test["finalized_adapter_artifacts"][source]["FULL_LINEAR"]["relative_path"]
+    fake.fixture["expected"]["ols"][source] = sha
+    fake.result["fit_artifacts"][relative] = sha
+    fake.write_result()
+    fake.fixture["expected"]["result"] = hashlib.sha256((fake.validation / "result.json").read_bytes()).hexdigest()
+    blocked("BLOCKED_SHAPE", fake.bind)
+
+
+@pytest.mark.parametrize("rank", [
+    np.asarray([768], dtype=np.int64),
+    np.asarray(768.0, dtype=np.float64),
+    np.asarray(True, dtype=np.bool_),
+    np.asarray(-1, dtype=np.int64),
+    np.asarray(769, dtype=np.int64),
+])
+def test_ols_invalid_rank_rejected(fake: Fixture, rank: np.ndarray) -> None:
+    source = "SIGLIP2"
+    with np.load(fake.ols_paths[source], allow_pickle=False) as archive:
+        arrays = dict(archive)
+    arrays["rank"] = rank
+    fake.rewrite_ols(source, arrays)
+    blocked("BLOCKED_SHAPE", fake.bind)
+
+
+@pytest.mark.parametrize("residuals,rank", [
+    (np.zeros((1,), dtype=np.float32), 768),
+    (np.zeros((768, 1), dtype=np.float32), 768),
+    (np.zeros((768,), dtype=np.float64), 768),
+    (np.full((768,), np.nan, dtype=np.float32), 768),
+    (np.full((768,), np.inf, dtype=np.float32), 768),
+    (np.zeros((768,), dtype=np.float32), 767),
+])
+def test_ols_invalid_residuals_rejected(fake: Fixture, residuals: np.ndarray, rank: int) -> None:
+    source = "DINOV3"
+    with np.load(fake.ols_paths[source], allow_pickle=False) as archive:
+        arrays = dict(archive)
+    arrays["rank"] = np.asarray(rank, dtype=np.int64)
+    arrays["residual_sum_squares"] = residuals
+    fake.rewrite_ols(source, arrays)
+    blocked("BLOCKED_SHAPE", fake.bind)
+
+
+def test_ols_fit_manifest_hash_drift_rejected(fake: Fixture) -> None:
+    relative = fake.test["finalized_adapter_artifacts"]["DINOV3"]["FULL_LINEAR"]["relative_path"]
+    fake.result["fit_artifacts"][relative] = "0" * 64
+    fake.write_result()
+    fake.fixture["expected"]["result"] = hashlib.sha256((fake.validation / "result.json").read_bytes()).hexdigest()
     blocked("BLOCKED_OLS_HASH", fake.bind)
 
 
