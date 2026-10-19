@@ -236,8 +236,10 @@ def _patch_data_offset(stream: Any, member: _StoredMember, shape: tuple[int, int
     return data_offset
 
 
-def _select_train_rows(unit: _Unit, shape: tuple[int, int]) -> list[tuple[str, np.ndarray]]:
-    """Read metadata and only Train patch ranges; never open connector/global values."""
+def _select_partition_rows(unit: _Unit, shape: tuple[int, int], partition: str) -> list[tuple[str, np.ndarray]]:
+    """Decode only the approved partition's patch ranges from a checked unit."""
+    if partition not in ("train", "validation"):
+        _fail("BLOCKED_TEST_GUARD", "only Train or Validation patch rows may be decoded")
     names = (preflight.TARGET_FIELDS if unit.bank == "TARGET_CLIP" else preflight.SOURCE_FIELDS)
     allowed = frozenset(f"{name}.npy" for name in names)
     count = len(unit.image_ids)
@@ -256,18 +258,28 @@ def _select_train_rows(unit: _Unit, shape: tuple[int, int]) -> list[tuple[str, n
             row_bytes = shape[0] * shape[1] * 4
             selected: list[tuple[str, np.ndarray]] = []
             for index, (image_id, split) in enumerate(zip(unit.image_ids, unit.splits, strict=True)):
-                if split != "train":
+                if split != partition:
                     continue
                 raw = _read_exact_at(stream, data_offset + index * row_bytes, row_bytes)
                 value = np.frombuffer(raw, dtype="<f4").copy().reshape(shape)
                 if not np.isfinite(value).all():
-                    _fail("BLOCKED_SHAPE", f"{unit.bank} Train patch row contains non-finite values")
+                    _fail("BLOCKED_SHAPE", f"{unit.bank} {partition} patch row contains non-finite values")
                 selected.append((image_id, value))
             return selected
     except LowRankRuntimeBindingError:
         raise
     except (OSError, ValueError, struct.error) as error:
         raise LowRankRuntimeBindingError("BLOCKED_NPZ_LAYOUT", f"{unit.bank} stored NPZ cannot be read safely") from error
+
+
+def _select_train_rows(unit: _Unit, shape: tuple[int, int]) -> list[tuple[str, np.ndarray]]:
+    """Preserve the reviewed Train-only reader entry point."""
+    return _select_partition_rows(unit, shape, "train")
+
+
+def _select_validation_rows(unit: _Unit, shape: tuple[int, int]) -> list[tuple[str, np.ndarray]]:
+    """Read Validation patches only; Test, Train, globals and connectors stay opaque."""
+    return _select_partition_rows(unit, shape, "validation")
 
 
 @dataclass(frozen=True)
@@ -376,6 +388,76 @@ class BoundLowRankInputs:
 
     def split(self, name: str) -> None:
         _fail("BLOCKED_TEST_GUARD", f"split access is not provided by this Train-only binding: {name}")
+
+
+@dataclass(frozen=True)
+class ValidationChunk:
+    source: np.ndarray
+    target: np.ndarray
+    image_ids: tuple[str, ...]
+    split: str = "validation"
+
+
+class ValidationChunkFactory:
+    """Paired, ordered, bounded Validation patches with per-unit SHA checks."""
+
+    def __init__(self, source: str, source_units: tuple[_Unit, ...], target_units: tuple[_Unit, ...],
+                 validation_ids: tuple[str, ...], patch_shape: tuple[int, int]) -> None:
+        self.source = source
+        self._source_units = source_units
+        self._target_units = target_units
+        self._validation_ids = validation_ids
+        self._patch_shape = patch_shape
+
+    def __call__(self) -> Iterator[ValidationChunk]:
+        source_rows = self._rows(self._source_units)
+        target_rows = self._rows(self._target_units)
+        observed: list[str] = []
+        pending_source: list[np.ndarray] = []
+        pending_target: list[np.ndarray] = []
+        pending_ids: list[str] = []
+        maximum = max(1, core.MAX_CHUNK_ROWS // self._patch_shape[0])
+        for (source_id, source_value), (target_id, target_value) in zip(source_rows, target_rows, strict=True):
+            if source_id != target_id:
+                _fail("BLOCKED_IMAGE_ORDER", f"{self.source} Validation pairing differs")
+            observed.append(source_id)
+            pending_ids.append(source_id)
+            pending_source.append(source_value)
+            pending_target.append(target_value)
+            if len(pending_ids) == maximum:
+                yield ValidationChunk(np.stack(pending_source), np.stack(pending_target), tuple(pending_ids))
+                pending_source, pending_target, pending_ids = [], [], []
+        if pending_ids:
+            yield ValidationChunk(np.stack(pending_source), np.stack(pending_target), tuple(pending_ids))
+        if tuple(observed) != self._validation_ids or len(set(observed)) != len(observed):
+            _fail("BLOCKED_IMAGE_ORDER", f"{self.source} Validation count/order differs from manifest")
+
+    def _rows(self, units: tuple[_Unit, ...]) -> Iterator[tuple[str, np.ndarray]]:
+        for unit in units:
+            if "validation" not in unit.splits:
+                continue
+            if _sha_file(unit.path) != unit.sha256:
+                _fail("BLOCKED_ARTIFACT_HASH", f"{unit.bank} Validation unit changed before read")
+            selected = _select_validation_rows(unit, self._patch_shape)
+            if _sha_file(unit.path) != unit.sha256:
+                _fail("BLOCKED_ARTIFACT_HASH", f"{unit.bank} Validation unit changed during read")
+            yield from selected
+
+
+@dataclass(frozen=True)
+class BoundLowRankValidationInputs:
+    config: Mapping[str, Any]
+    ols: Mapping[str, AcceptedOLS]
+    validation_factories: Mapping[str, ValidationChunkFactory]
+    provenance: Mapping[str, Any]
+
+    def validation_factory(self, source: str) -> ValidationChunkFactory:
+        if source not in SOURCE_ORDER:
+            _fail("BLOCKED_TEST_GUARD", "only frozen Validation sources are available")
+        return self.validation_factories[source]
+
+    def split(self, name: str) -> None:
+        _fail("BLOCKED_TEST_GUARD", f"arbitrary split access is forbidden: {name}")
 
 
 def _lineage(repository_root: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -590,3 +672,49 @@ def _bind_synthetic_fixture_for_tests(repository_root: str | Path, t001d_run_roo
                                       fixture: Mapping[str, Any]) -> BoundLowRankInputs:
     """Private offline seam: fixture hashes/geometry cannot reach the public entry point."""
     return _bind(repository_root, t001d_run_root, t002d_validation_root, fixture=fixture)
+
+
+def _bind_validation(repository_root: str | Path, t001d_run_root: str | Path,
+                     t002d_validation_root: str | Path, *,
+                     fixture: Mapping[str, Any] | None = None) -> BoundLowRankValidationInputs:
+    """Add Validation selection over the already accepted Train/OLS lineage."""
+    accepted = _bind(repository_root, t001d_run_root, t002d_validation_root, fixture=fixture)
+    repository = _root(repository_root, "repository_root")
+    run_root = _root(t001d_run_root, "t001d_run_root")
+    _config, linear, _bank, _test = _lineage(repository)
+    try:
+        plan, plan_id = t001d.load_bound_plan(run_root)
+    except (OSError, ValueError, TypeError, t001d.HarnessError) as error:
+        raise LowRankRuntimeBindingError("BLOCKED_PLAN", "T001D bound plan unavailable") from error
+    provenance = accepted.provenance
+    if plan_id != provenance["t001d_plan_id"] or plan.get("manifest_sha256") != provenance["manifest_sha256"]:
+        _fail("BLOCKED_PLAN", "Validation plan changed after accepted binding")
+    expected = {"plan": plan_id, "manifest": provenance["manifest_sha256"],
+                "banks": provenance["bank_identity_sha256"]}
+    patch_shape = (196, 768) if fixture is None else tuple(fixture["patch_shape"])
+    units, _train_ids = _banks(run_root, plan, plan_id, linear, patch_shape, expected)
+    validation_ids = tuple(image_id for unit in units["TARGET_CLIP"]
+                           for image_id, split in zip(unit.image_ids, unit.splits, strict=True)
+                           if split == "validation")
+    if len(validation_ids) != 100 or len(set(validation_ids)) != 100:
+        _fail("BLOCKED_SPLIT", "Validation image count or uniqueness differs")
+    factories = {source: ValidationChunkFactory(source, units[source], units["TARGET_CLIP"],
+                                                 validation_ids, patch_shape)
+                 for source in SOURCE_ORDER}
+    return BoundLowRankValidationInputs(accepted.config, accepted.ols, factories, {
+        **provenance, "schema_id": "vea.p2.query_adapter_low_rank_validation_binding.v1",
+        "validation_image_count": len(validation_ids),
+    })
+
+
+def bind_low_rank_validation_runtime(repository_root: str | Path, t001d_run_root: str | Path,
+                                     t002d_validation_root: str | Path) -> BoundLowRankValidationInputs:
+    """Bind accepted OLS and Validation-only preconnector patch streams."""
+    return _bind_validation(repository_root, t001d_run_root, t002d_validation_root)
+
+
+def _bind_validation_synthetic_fixture_for_tests(repository_root: str | Path, t001d_run_root: str | Path,
+                                                 t002d_validation_root: str | Path, *,
+                                                 fixture: Mapping[str, Any]) -> BoundLowRankValidationInputs:
+    """Private offline seam; production identities remain fixed."""
+    return _bind_validation(repository_root, t001d_run_root, t002d_validation_root, fixture=fixture)
