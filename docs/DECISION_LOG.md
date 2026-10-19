@@ -32,6 +32,7 @@
 | ID | Decision | Rationale | Status |
 |---|---|---|---|
 | VEA-D023 | Do not promote the tested same-capacity connector-aware affine objective over OLS; plan a separately approved bounded low-rank linear Train/Validation design only | T003E SIGLIP2 Validation connector/R@1 proxies improved, but user-supplied T003G Validation generation reports lower Token F1 and native exact match; DINOV3 selected unchanged OLS initialization and identical generation. No Test-informed selection or new Test access follows | NOT_PROMOTED |
+| VEA-D024 | Record `NO_RANK_ACCEPTED` for both sources under the frozen T004A six-rank Validation R@1 gate; retain the accepted OLS controls | User-supplied T004H rounded Validation R@1: SIGLIP2 OLS `0.89`, best rank 256 `0.86` below minimum `0.87`; DINOV3 OLS `0.87`, best rank 256 `0.84` below minimum `0.85`. All other frozen ranks are lower. The necessary criterion fails before conjunctive qualification; connector, generation and latency remain `NOT_EVALUATED`. No threshold/config change, Test-informed selection, or claim about frozen-VLM generation follows | NO_RANK_ACCEPTED; REVIEW_PENDING |
 
 ## Open decisions
 
@@ -42,15 +43,20 @@
 | VEA-O003 | 1,000-image selection policy and manifest | Phase 1 extraction |
 | VEA-O004 | Bulk CUDA host and batch size | Phase 1 extraction |
 | VEA-O005 | Empirical similarity interpretation bands | Final Phase 1 analysis, after null and repeat distributions |
-| VEA-O007 | Low-rank rank grid and MLP bottleneck size | Future complexity-extension configuration |
+| VEA-O007 | MLP bottleneck size; the T004A study's low-rank rank grid is frozen | Future nonlinear-adapter configuration |
 | VEA-O008 | MLP optimizer, learning rate, epochs, and early stopping | Future optimizer-trained adapter configuration |
 | VEA-O009 | MLP patch/connector multi-objective loss and connector-loss weight | Future nonlinear adapter configuration |
-| VEA-O010 | Hard parameter and latency budgets | Future complexity comparison |
+| VEA-O010 | Hard parameter and latency budgets for future studies; T004A's low-rank study budgets are frozen | Future complexity comparison |
 | VEA-O012 | Semantic generation metric | Separately approved optional-metric Task |
 
 Resolved by `VEA-P2-T002A`: VEA-O006 and VEA-O011. The Ridge portion of
 VEA-O007 and the source-order portion of VEA-O010 are also resolved for the
 first linear experiment by VEA-D017 through VEA-D022.
+T004A separately resolved its six-rank grid, parameter ceiling and latency
+criterion without resolving MLP or broader future-study settings. VEA-D024
+records the necessary R@1 gate result; it does not replace VEA-D023 or revise
+the T004A configuration. Earlier runs and T004G `UNSELECTED` output are not
+invalidated or rewritten.
 
 ## Change procedure
 

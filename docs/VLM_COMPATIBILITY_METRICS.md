@@ -106,3 +106,36 @@ not rule out other connector-loss methods. The T003G hashes and structural
 raw per-image rows. T002E Test and T003G Validation are different partitions,
 so their absolute metrics cannot be treated as a same-image comparison or used
 for future method selection. No new Test access is authorized.
+
+## 9. T004H Low-rank Linear Validation patch/identity summary
+
+The user-supplied T004H Validation-only console summary used 100 same-image
+Validation IDs per source, native TARGET_CLIP preconnector patches as reference,
+and each source's accepted same-run Full Linear OLS control. Run
+`VEA-P2-T004H-REAL-APPLE-20261019T141806Z-259343` at reviewed T004G commit
+`a67d923b2b65c64f9782d70cd13f183312ed60fd` reported result SHA-256
+`ee4c36afd3597a4e737a3af33e5a27a7c944bad282331c2fa2a0e3558fa70fe2`,
+output verification `PASS`, and shell exit `0`. T004I did not rehash or
+recompute the Apple result or per-image arrays; these are rounded supplied
+summaries. The full 14-condition table is in the T004I run report.
+
+| Source | Condition | Patch cosine | Patch NMSE | Patch R² | R@1 | R@5 | Frozen R@1 minimum |
+|---|---|---:|---:|---:|---:|---:|---:|
+| SIGLIP2 | OLS_REFERENCE | 0.462842 | 0.863400 | 0.136600 | 0.890 | 0.980 | 0.870 |
+| SIGLIP2 | LOW_RANK_256 | 0.461477 | 0.864650 | 0.135350 | 0.860 | 0.980 | 0.870 |
+| DINOV3 | OLS_REFERENCE | 0.507949 | 0.813225 | 0.186775 | 0.870 | 0.980 | 0.850 |
+| DINOV3 | LOW_RANK_256 | 0.506261 | 0.815003 | 0.184997 | 0.840 | 0.980 | 0.850 |
+
+Rank 256 is the highest R@1 candidate in each frozen six-rank grid; it is
+`-0.03` below same-run OLS and `0.01` below the frozen `OLS - 0.02` minimum.
+All lower ranks also fail. The conjunctive T004A eligibility gate therefore
+yields `NO_RANK_ACCEPTED` for both sources, retaining accepted OLS. This is a
+necessary-gate result; T004G's original output remains `UNSELECTED`.
+With 100 images, R@1 changes in `0.01` increments, and these rounded values
+do not supply uncertainty intervals.
+
+Connector cosine/NMSE, native exact match, Token F1, fair float32 adapter-only
+latency, paired bootstrap intervals and Test metrics are `NOT_EVALUATED` for
+this low-rank study. No low-rank frozen-TinyLLaVA generation conclusion follows.
+The historical T002E Test values are from a different partition and are not
+used for this gate or rank selection. No new Test access is authorized.

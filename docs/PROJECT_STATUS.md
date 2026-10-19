@@ -1,9 +1,10 @@
 # Project Status
 
-- Status date: 2026-10-15
+- Status date: 2026-10-20
 - Current phase: `Phase 2 - query-conditioned encoder-to-VLM adapter compatibility`
 - Documentation state: `VEA-P2-T002F` independently accepted and closed by
-  `VEA-P2-T002G`; T003H connector-aware study closure awaits independent review
+  `VEA-P2-T002G`; T004I records the user-supplied T004F/T004H evidence and
+  frozen T004A R@1 gate disposition, pending independent T004I review
 - First linear experiment configuration: frozen by `VEA-P2-T002A` at
   `configs/vlm_compat/p2_query_adapter_linear_v1.json`
 - Source of truth: this repository and its tracked contracts
@@ -23,18 +24,17 @@
 - The first direct linear experiment freezes both source lanes, four linear
   methods, Ridge validation selection, deterministic generation, and numeric
   precision. The tested same-capacity connector-aware affine objective is
-  `NOT_PROMOTED` over OLS; future low-rank, MLP, and spatial settings remain
+  `NOT_PROMOTED` over OLS. T004A separately froze the bounded six-rank
+  Low-rank Linear study; MLP, spatial and other future-study settings remain
   `OPEN`.
 
 ## Next required action
 
-Submit T003H for independent review. A later task may design and freeze a
-bounded low-rank linear Train/Validation experiment, including rank grid,
-fitting/parameterization, parameter and latency budgets, Validation selection,
-frozen-generation evaluation, scientific acceptance criteria, and untouched-Test
-policy. No values or method are selected here, and no new Test access is
-authorized. Canonical integration merge remains `UNVERIFIED`, and historical
-Codex test counts remain `UNRECOVERED`.
+Submit T004I for independent review. A next hypothesis, including any nonlinear
+or MLP design, needs separate explicit approval and its own configuration
+freeze. The frozen T004A low-rank study is not automatically expanded or
+retuned. No new Test access is authorized. Canonical integration merge remains
+`UNVERIFIED`, and historical Codex test counts remain `UNRECOVERED`.
 
 ## T002E real-Test result recorded by T002F
 
@@ -88,6 +88,48 @@ Codex test counts remain `UNRECOVERED`.
   T002E held-out Test and T003G Validation are different image partitions;
   their absolute metrics are not directly comparable or valid for future method
   selection.
+
+## T004A Low-rank Linear Validation gate disposition
+
+- T004A froze independent SIGLIP2 and DINOV3 reduced-rank regression at ranks
+  `[8,16,32,64,128,256]`, accepted Full Linear OLS controls, a same-run
+  Validation R@1 minimum of OLS minus `0.02` absolute, conjunctive selection
+  criteria, and `NO_RANK_ACCEPTED` with retained OLS if none qualifies.
+  T004B implemented the numerical core; T004C-R2 the accepted binding; T004E
+  the Train-only fit runner; T004G the Validation-only patch/identity runtime.
+  These are reviewed implementation boundaries, not claims of downstream
+  scientific success or canonical merge.
+- User-supplied T004F real Train-only execution at reviewed T004E commit
+  `8c0beb8a88cc5bdb1225c50ed62a7ea0349ef06e`, run
+  `VEA-P2-T004F-REAL-APPLE-20261019T113611Z-253652`, result SHA-256
+  `84549208e6e7a097e769b89b254bcf1bf939b1e29a3c06185a77f0afbdd858f3`,
+  reported 800 Train images per source, all six ranks fitted, 768 positive
+  eigenvalues per source, artifact manifest verification `PASS`, and shell exit
+  `0`. It reported no Validation or Test metric and no generation.
+- User-supplied T004H real Validation-only patch/identity execution at reviewed
+  T004G commit `a67d923b2b65c64f9782d70cd13f183312ed60fd`, run
+  `VEA-P2-T004H-REAL-APPLE-20261019T141806Z-259343`, result SHA-256
+  `ee4c36afd3597a4e737a3af33e5a27a7c944bad282331c2fa2a0e3558fa70fe2`,
+  reported output verification `PASS`, all ranks `UNSELECTED`, no Test numeric
+  evaluation, and shell exit `0`. These observations and rounded metrics were
+  supplied by the user; T004I did not inspect or rehash raw Apple result or
+  per-image files.
+- SIGLIP2 same-run OLS R@1 `0.89` requires at least `0.87`; its best frozen
+  low-rank candidate, rank 256, reaches `0.86`. DINOV3 OLS R@1 `0.87`
+  requires at least `0.85`; rank 256 reaches `0.84`. Every lower rank also
+  fails. Therefore all six candidates per source fail a necessary conjunctive
+  criterion: the bounded eligibility verdict is `NO_RANK_ACCEPTED` for both
+  sources, with accepted OLS retained. T004G output itself remains `UNSELECTED`
+  and is not rewritten. Full rounded table and arithmetic are in the T004I
+  run report.
+- Connector cosine/NMSE, native exact match, Token F1, fair float32 adapter
+  latency, paired bootstrap intervals, and Test metrics remain
+  `NOT_EVALUATED` for this low-rank study. This gate failure is not an empirical
+  frozen-TinyLLaVA generation result or a universal verdict on low-rank
+  methods. With 100 Validation images, R@1 changes in `0.01` increments; rank
+  256 is one increment below each source's minimum. The frozen 1,500-generation
+  plan is not silently changed, but an expensive follow-up is not scheduled by
+  default after this already-failed necessary gate.
 
 ## Update rule
 

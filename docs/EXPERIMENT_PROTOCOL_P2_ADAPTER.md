@@ -150,23 +150,58 @@ partitions and must not be compared as same-image results. Historical Test
 results are not used for future method selection, and no new Test access is
 authorized.
 
+## 9b. Frozen T004A Low-rank Linear gate result
+
+T004A separately froze the Low-rank Linear reduced-rank regression study at
+`[8,16,32,64,128,256]`, with accepted same-run Full Linear OLS controls,
+Train-only fitting, the 100-image Validation split, a maximum of 400,000 stored
+float32 scalars per source, and the matched-device float32 adapter-only latency
+criterion. T004B/C-R2/E/G implemented its numerical core, input binding,
+Train-only fitting runner and Validation patch/identity runtime. None changes
+the frozen T004A design.
+
+The user-supplied T004F Train-only run at reviewed T004E commit
+`8c0beb8a88cc5bdb1225c50ed62a7ea0349ef06e` reported six fitted ranks
+per source and no Validation/Test metrics. The user-supplied T004H
+Validation-only run at reviewed T004G commit
+`a67d923b2b65c64f9782d70cd13f183312ed60fd` reported patch/identity
+metrics for OLS and all six ranks on the same 100 Validation images per
+source. T004I did not independently inspect or rehash the raw Apple files.
+
+The frozen necessary R@1 criterion is candidate `>=` same-run OLS minus
+`0.02` absolute. SIGLIP2 OLS `0.89` requires `0.87`, while the highest
+low-rank R@1 is rank 256 at `0.86`; DINOV3 OLS `0.87` requires `0.85`, while
+rank 256 reaches `0.84`. Every other frozen rank is lower. Since all selection
+criteria are conjunctive, every rank is ineligible regardless of the
+unmeasured criteria. The bounded eligibility verdict is `NO_RANK_ACCEPTED`
+for each source; retain accepted OLS. T004G's original condition records
+remain `UNSELECTED` and are not rewritten. This necessary-gate disposition
+does not assert a frozen TinyLLaVA generation result or universal low-rank
+failure. The 100-image R@1 granularity is `0.01`; rank 256 is one increment
+below the minimum for each source.
+
+Connector cosine/NMSE, native exact match, Token F1, fair float32 adapter-only
+latency, paired bootstrap intervals and Test metrics are `NOT_EVALUATED` in
+T004H. The frozen 1,500 Validation-generation plan is unchanged; no automatic
+expensive follow-up is scheduled after this failed necessary gate. Any later
+nonlinear or MLP design requires new approval and a separate configuration
+freeze. Historical T002E Test numbers are not selectors for this study.
+
 ## 10. Remaining OPEN configuration fields
 
-The first linear experiment does not assign future complexity settings. These
-remain `OPEN`:
+The first linear experiment does not assign future complexity settings. T004A
+froze the rank grid, fitting, parameter and latency budgets, Validation
+selection, generation plan and Test policy for its bounded Low-rank Linear
+study. The following remain `OPEN` for separate future studies:
 
-- low-rank rank grid;
 - MLP bottleneck size, optimizer, learning rate, epochs, and early stopping;
 - MLP patch/connector multi-objective loss and connector-loss weight;
-- hard parameter and latency budgets;
+- parameter and latency budgets outside the bounded T004A study;
 - spatial adapter architecture;
 - semantic generation metric.
 
-A later approved low-rank linear Train/Validation design must first freeze the
-rank grid, fitting/parameterization, parameter and latency budgets, Validation
-selection, frozen-generation evaluation, scientific acceptance criteria, and
-untouched-Test policy. T003H assigns none of these values and starts no
-low-rank, MLP, or spatial experiment.
+T003H assigned none of the later T004A low-rank values. T004I does not start
+an MLP or spatial experiment, adjust thresholds, or authorize new Test access.
 
 Original Apple artifact paths are not recovered in the T002F evidence record.
 Current validator evidence paths do not replace those historical paths.
