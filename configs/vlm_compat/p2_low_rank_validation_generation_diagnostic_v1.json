@@ -1,0 +1,23 @@
+{
+  "schema_id": "vea.p2.low_rank_ols256_validation_generation_diagnostic.v1",
+  "study_id": "vea.p2.low_rank_ols256_validation_generation_diagnostic.v1",
+  "task_id": "VEA-P2-T004J",
+  "role": "post_hoc_exploratory_validation_diagnostic_not_rank_selection",
+  "dataset": "p1_1000",
+  "split": "validation",
+  "validation_image_count": 100,
+  "source_order": ["SIGLIP2", "DINOV3"],
+  "target": "TARGET_CLIP",
+  "lane_order": ["NATIVE", "SIGLIP2/OLS_REFERENCE", "SIGLIP2/LOW_RANK_256", "DINOV3/OLS_REFERENCE", "DINOV3/LOW_RANK_256"],
+  "generation_plan": {"native": 100, "adapted": 400, "total": 500},
+  "generation": {"prompt": "What is shown in this image? Answer briefly.", "max_new_tokens": 32, "num_beams": 1, "do_sample": false, "top_p": null, "temperature": 0},
+  "t004f_result_sha256": "84549208e6e7a097e769b89b254bcf1bf939b1e29a3c06185a77f0afbdd858f3",
+  "t004h_result_sha256": "ee4c36afd3597a4e737a3af33e5a27a7c944bad282331c2fa2a0e3558fa70fe2",
+  "t004g_reviewed_commit": "a67d923b2b65c64f9782d70cd13f183312ed60fd",
+  "t004i_reviewed_commit": "92a6babf316cdc4594dba97b1912ef1b4ed907aa",
+  "selection_status": "NO_RANK_ACCEPTED",
+  "test_scientific_access": 0,
+  "test_payload_open_count": 0,
+  "test_metric_count": 0,
+  "test_generation_count": 0
+}
