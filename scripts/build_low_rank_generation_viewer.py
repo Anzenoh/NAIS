@@ -153,8 +153,10 @@ def fresh_html_path(output_file: Path, roots: Sequence[Path]) -> Path:
     return output
 
 
-def build(*, repository: Path, result_root: Path, result_sha256: str,
-          t001d_root: Path, output_file: Path) -> Path:
+def load_verified(*, repository: Path, result_root: Path, result_sha256: str,
+                  t001d_root: Path) -> tuple[dict[str, Any], list[dict[str, Any]],
+                                              list[runtime.ValidationImage]]:
+    """Return fully verified T004J/T004K Validation inputs without writing output."""
     config = runtime.load_config(repository)
     result_path = result_root / "result.json"
     runtime.require(len(result_sha256) == 64 and
@@ -192,10 +194,17 @@ def build(*, repository: Path, result_root: Path, result_sha256: str,
     summary = runtime.validate_rows(rows, ids, images, hashes, ranks, config)
     runtime.require(summary == runtime.read_json(aggregate_path) == result.get("aggregate"),
                     "T004J aggregate differs")
+    return {**result, "result_sha256": result_sha256}, rows, images
+
+
+def build(*, repository: Path, result_root: Path, result_sha256: str,
+          t001d_root: Path, output_file: Path) -> Path:
+    result, rows, images = load_verified(repository=repository, result_root=result_root,
+                                         result_sha256=result_sha256, t001d_root=t001d_root)
     plan, _ = transport.load_bound_plan(t001d_root)
     dataset_root = Path(plan["roots"]["dataset_root"]).resolve()
     output = fresh_html_path(output_file, (repository, result_root, t001d_root, dataset_root))
-    html = render_html(rows, images, {**result, "result_sha256": result_sha256})
+    html = render_html(rows, images, result)
     runtime.write_new(output, html.encode("utf-8"))
     return output
 

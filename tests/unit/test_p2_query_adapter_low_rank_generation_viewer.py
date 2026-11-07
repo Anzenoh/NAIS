@@ -59,6 +59,16 @@ def test_builder_rejects_wrong_sha_and_synthetic_result(tmp_path: Path) -> None:
     assert not (tmp_path / "viewer.html").exists()
 
 
+def test_reusable_loader_preserves_production_checks(tmp_path: Path) -> None:
+    _, _, result = miniature(tmp_path)
+    with pytest.raises(runtime.DiagnosticError, match="synthetic_test_only"):
+        viewer.load_verified(repository=ROOT, result_root=tmp_path / "result",
+                             result_sha256=result["result_sha256"], t001d_root=tmp_path)
+    with pytest.raises(runtime.DiagnosticError, match="SHA"):
+        viewer.load_verified(repository=ROOT, result_root=tmp_path / "result",
+                             result_sha256="0" * 64, t001d_root=tmp_path)
+
+
 def test_viewer_refuses_test_namespace_and_duplicate_conditions(tmp_path: Path) -> None:
     rows, images, result = miniature(tmp_path)
     config = runtime.load_config(ROOT)

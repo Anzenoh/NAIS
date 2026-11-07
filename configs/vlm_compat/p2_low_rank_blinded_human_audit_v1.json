@@ -1,0 +1,21 @@
+{
+  "schema_id": "vea.p2.low_rank_blinded_human_audit.v1",
+  "task_id": "VEA-P2-T004M",
+  "purpose": "post_hoc_exploratory_absolute_caption_quality_not_selection",
+  "partition": "validation",
+  "image_count": 100,
+  "condition_count": 5,
+  "blinding_seed": 43,
+  "source_t004k_result_sha256": "6d526c7382811cb79a78c58cd2bc6802ee793117d21ea669ff03cbcb94cddff0",
+  "score_type": "integer_0_to_5_or_null",
+  "score_reference": "actual_displayed_image_not_native_text",
+  "rubric": {
+    "5": "virtually all essential objects/scene/actions correct; no meaningful hallucination.",
+    "4": "largely correct with only minor omissions or errors.",
+    "3": "main scene broadly correct but notable mistake or omission.",
+    "2": "partial match but major misunderstanding or hallucination.",
+    "1": "very limited overlap; most essential content wrong.",
+    "0": "main objects/scene wrong or description nearly unrelated."
+  },
+  "selection_status": "NO_RANK_ACCEPTED"
+}
